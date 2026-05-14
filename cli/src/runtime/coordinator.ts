@@ -4,6 +4,7 @@ import { loadConfig } from "../config/loader.js";
 import type { Config } from "../config/schema.js";
 import { runProviderSession, type ProviderSessionEvents } from "./provider.js";
 import { ALL_TOOLS, getTools, type Tool } from "./tools/index.js";
+import type { ToolContext } from "./tools/index.js";
 
 export interface CoordinatorInvocation {
   agent: string;
@@ -108,6 +109,59 @@ export async function invoke(req: CoordinatorInvocation): Promise<CoordinatorRes
     output: result.fullText,
     toolCalls: result.toolCalls,
     durationMs: result.durationMs,
+  };
+}
+
+// ── Chat-session prep ───────────────────────────────────────────────────────
+//
+// `pwagent chat` needs the same resolution (charter + skills + tools + model + system prompt)
+// as `pwagent run`, but consumes them via createChatSession() instead of runProviderSession().
+// Extracted here so both paths agree on the rules.
+
+export interface AgentPreparation {
+  agent: string;
+  charterSource: Charter["source"];
+  systemPrompt: string;
+  model: string;
+  tools: Tool[];
+  toolContext: ToolContext;
+  toolNames: string[];
+  skillsInjected: { id: string; reason: string }[];
+  clientName: string;
+}
+
+export interface PrepareAgentRequest {
+  agent: string;
+  /** Free-text hint used for skill-aware injection. The chat REPL passes the first user turn. */
+  prompt?: string;
+  modelOverride?: string;
+  mode?: "direct" | "light" | "standard" | "full";
+  cwd?: string;
+}
+
+export async function prepareAgent(req: PrepareAgentRequest): Promise<AgentPreparation> {
+  const cwd = req.cwd ?? process.cwd();
+  const charter = await findCharter(req.agent, cwd);
+  if (!charter) {
+    throw new Error(`unknown agent: ${req.agent} — run 'pwagent agents list' to see available`);
+  }
+  const cfg = await loadConfig();
+  const model = pickModel(req.agent, cfg, charter, req.modelOverride);
+  const allowedToolNames = pickToolAllowlist(charter, cfg);
+  const tools = getTools(new Set(allowedToolNames));
+  const allSkills = await loadSkills(cwd);
+  const injected = pickSkills(req.prompt ?? "", charter, allSkills.list);
+  const systemPrompt = buildSystemPrompt(charter, injected, req.mode ?? "standard");
+  return {
+    agent: req.agent,
+    charterSource: charter.source,
+    systemPrompt,
+    model,
+    tools,
+    toolContext: { cwd, allowlist: new Set(allowedToolNames) },
+    toolNames: tools.map((t) => t.name),
+    skillsInjected: injected.map((s) => ({ id: s.id, reason: "matched user prompt + charter keywords" })),
+    clientName: cfg.provider.clientName,
   };
 }
 

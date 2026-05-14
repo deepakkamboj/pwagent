@@ -10,6 +10,7 @@ import { configCommand } from "./cli/config.js";
 import { loginCommand, logoutCommand, whoamiCommand } from "./cli/auth.js";
 import { modelCommand } from "./cli/model.js";
 import { runCommand } from "./cli/run.js";
+import { chatCommand } from "./cli/chat.js";
 import { jobCommand, schedulerCommand } from "./cli/scheduler.js";
 import { ralphCommand } from "./cli/ralph.js";
 import { portalCommand } from "./cli/portal.js";
@@ -43,6 +44,7 @@ program.addCommand(configCommand);
 
 // Runtime
 program.addCommand(runCommand);
+program.addCommand(chatCommand);
 
 // Scheduler
 program.addCommand(schedulerCommand);

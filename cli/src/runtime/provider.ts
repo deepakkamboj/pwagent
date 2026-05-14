@@ -350,6 +350,171 @@ export async function runProviderSession(cfg: ProviderSessionConfig): Promise<Pr
   }
 }
 
+// ── Long-lived chat session ─────────────────────────────────────────────────
+//
+// Powers `pwagent chat`. A normal `runProviderSession` opens, sends one prompt,
+// then disconnects. For a REPL we need to keep the session open across many
+// user turns — the SDK retains conversation state inside the session, so we
+// get multi-turn context for free.
+
+export interface ChatSessionConfig {
+  systemPrompt: string;
+  model: string;
+  clientName: string;
+  tools: Tool[];
+  toolContext: ToolContext;
+  connectTimeoutMs?: number;
+  idleTimeoutMs?: number;
+  debug?: boolean;
+  onProgress?: (stage: string) => void;
+}
+
+export interface ChatTurn {
+  fullText: string;
+  toolCalls: { name: string; ok: boolean }[];
+  durationMs: number;
+}
+
+export interface ChatSession {
+  send(prompt: string, events?: ProviderSessionEvents): Promise<ChatTurn>;
+  disconnect(): Promise<void>;
+}
+
+export async function createChatSession(cfg: ChatSessionConfig): Promise<ChatSession> {
+  const connectMs = cfg.connectTimeoutMs ?? 20_000;
+  const idleMs = cfg.idleTimeoutMs ?? 600_000;
+  const progress = (stage: string) => cfg.onProgress?.(stage);
+
+  progress("loading sdk");
+  const client = (await getClient(cfg.debug ? "debug" : "error")) as {
+    start(): Promise<void>;
+    getState(): string;
+    createSession(opts: unknown): Promise<{
+      send(req: { prompt: string }): Promise<void>;
+      on(event: string, handler: (e: unknown) => void): () => void;
+      disconnect(): Promise<void>;
+    }>;
+  };
+
+  if (typeof client.getState === "function" && client.getState() !== "connected") {
+    progress("connecting");
+    try {
+      const startPromise = client.start();
+      let timer: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Copilot SDK did not connect within ${connectMs / 1000}s — likely missing copilot scope on gh token, missing Copilot CLI, or network unreachable`,
+              ),
+            ),
+          connectMs,
+        );
+      });
+      try {
+        await Promise.race([startPromise, timeoutPromise]);
+      } finally {
+        if (timer) clearTimeout(timer);
+        startPromise.catch(() => {});
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const hint = actionableHint(msg);
+      throw new Error(hint ? `${msg}\n  → ${hint}` : msg);
+    }
+  }
+
+  progress("creating session");
+  const session = await client.createSession({
+    clientName: cfg.clientName,
+    model: cfg.model,
+    systemMessage: { mode: "replace", content: cfg.systemPrompt },
+    streaming: true,
+    tools: cfg.tools.map((t) => sdkToolDescriptor(t, cfg.toolContext)),
+    onPermissionRequest: () => ({ kind: "approve-once" as const }),
+  });
+  progress("session ready");
+
+  return {
+    async send(prompt: string, events?: ProviderSessionEvents): Promise<ChatTurn> {
+      const started = Date.now();
+      let fullText = "";
+      const toolCalls: { name: string; ok: boolean }[] = [];
+      let idleTimer: NodeJS.Timeout | undefined;
+      const unsubs: Array<() => void> = [];
+
+      const result = new Promise<ChatTurn>((resolve, reject) => {
+        const resetIdle = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            cleanup();
+            reject(new Error(`provider session idle for ${idleMs / 1000}s — aborting turn`));
+          }, idleMs);
+        };
+        const cleanup = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          unsubs.forEach((u) => u());
+        };
+
+        unsubs.push(
+          session.on("assistant.message_delta", (raw) => {
+            resetIdle();
+            const delta = (raw as { data?: { deltaContent?: string } })?.data?.deltaContent ?? "";
+            fullText += delta;
+            events?.onDelta?.(delta);
+          }),
+        );
+        unsubs.push(
+          session.on("tool.execution_start", (raw) => {
+            resetIdle();
+            const name = (raw as { data?: { toolName?: string } })?.data?.toolName ?? "";
+            events?.onToolStart?.(name);
+          }),
+        );
+        unsubs.push(
+          session.on("tool.execution_complete", (raw) => {
+            resetIdle();
+            const data = (raw as { data?: { toolName?: string; success?: boolean } })?.data ?? {};
+            const ok = data.success !== false;
+            toolCalls.push({ name: data.toolName ?? "", ok });
+            events?.onToolEnd?.(data.toolName ?? "", ok);
+          }),
+        );
+        unsubs.push(
+          session.on("session.idle", () => {
+            cleanup();
+            resolve({ fullText, toolCalls, durationMs: Date.now() - started });
+          }),
+        );
+        unsubs.push(
+          session.on("session.error", (raw) => {
+            const msg = (raw as { data?: { message?: string } })?.data?.message ?? "unknown session error";
+            events?.onError?.(msg);
+            cleanup();
+            reject(new Error(msg));
+          }),
+        );
+
+        resetIdle();
+        session.send({ prompt }).catch((err: unknown) => {
+          cleanup();
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+      });
+
+      return await result;
+    },
+    async disconnect(): Promise<void> {
+      try {
+        await session.disconnect();
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
 /** Convert a pwagent Tool into the SDK's tool-descriptor shape. */
 function sdkToolDescriptor(tool: Tool, ctx: ToolContext): unknown {
   return {

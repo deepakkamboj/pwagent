@@ -504,7 +504,8 @@ pwagent config view | get <path> | set <path> <val> | path
 pwagent model list | show | set <id> [--agent <agent>] | reset
 
 # runtime — invoke an agent through the coordinator + Copilot SDK
-pwagent run <agent> [prompt...] [--model <id>] [--mode direct|light|standard|full] [--cwd <path>] [--dry-run] [--json]
+pwagent run <agent> [prompt...] [--model <id>] [--mode direct|light|standard|full] [--cwd <path>] [--dry-run] [--json] [--debug] [--connect-timeout-s <n>]
+pwagent chat [--agent supervisor] [--resume <id>] [--list]   # interactive multi-turn REPL with persistent sessions
 pwagent review                       # interactive HITL stamp loop
 pwagent ralph go | status | stop     # in-session driver (Squad-style)
 
@@ -617,6 +618,33 @@ pwagent run record --kind patterns --from ./fix-results.json
 ```
 
 Full examples and end-to-end workflows live in [USAGE.md](USAGE.md).
+
+### Interactive chat — `pwagent chat`
+
+For interactive multi-turn use, `pwagent chat` opens a REPL with the same coordinator + SDK as `pwagent run`. The SDK session stays open across turns so conversation context is retained natively.
+
+```bash
+pwagent chat                              # supervisor, standard mode
+pwagent chat --agent fix --mode direct    # chat with a specific agent
+pwagent chat --resume <session-id>        # continue a prior session (replays user turns to rebuild context)
+pwagent chat --list                       # show saved sessions
+```
+
+Slash commands while inside the REPL:
+
+| Command | Effect |
+|---|---|
+| `/help` | List slash commands |
+| `/agents` | List available agents |
+| `/agent <name>` | Switch active agent (rebuilds the SDK session with the new charter) |
+| `/model <id>` | Switch model (rebuilds the SDK session) |
+| `/mode direct\|light\|standard\|full` | Change response mode hint for next turn |
+| `/skills` | Show skills injected for the current agent |
+| `/session` | Show current session id + path on disk |
+| `/clear` | Clear screen |
+| `/exit`, `/quit` | Disconnect and exit |
+
+Every turn is appended to `~/.pwagent/sessions/<session-id>.jsonl` as one JSON record per line (`user`, `assistant`, or `system` for errors). `--resume` reads that file and replays the user turns silently into a fresh SDK session so the model rebuilds context.
 
 ### Coordinator runtime — what `pwagent run` actually does
 
