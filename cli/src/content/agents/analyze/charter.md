@@ -80,6 +80,5 @@ Coordinator typically injects, by mode:
 
 ## Model
 
-- Preferred:
-  - `--scenarios` / `--test-quality` → `claude-sonnet-4.5` (semantic reasoning)
-  - `--flakes` → `claude-haiku-4.5` (data plumbing)
+- Preferred: claude-sonnet-4.5
+- Notes: `--scenarios` and `--test-quality` need semantic reasoning. For `--flakes`, pass `--model claude-haiku-4.5` at the CLI for cheaper data plumbing.

@@ -17,6 +17,14 @@ export interface CoordinatorInvocation {
   /** Optional dry-run: build the system prompt + tool list but don't call the model. */
   dryRun?: boolean;
   events?: ProviderSessionEvents;
+  /** SDK connect timeout in ms (default 20s). */
+  connectTimeoutMs?: number;
+  /** Session idle timeout in ms (default 600s). */
+  idleTimeoutMs?: number;
+  /** Raise SDK log level to debug + emit progress markers. */
+  debug?: boolean;
+  /** Receive lifecycle stages from the SDK adapter. */
+  onProgress?: (stage: string) => void;
 }
 
 export interface CoordinatorResult {
@@ -83,6 +91,10 @@ export async function invoke(req: CoordinatorInvocation): Promise<CoordinatorRes
       allowlist: new Set(allowedToolNames),
     },
     events: req.events,
+    connectTimeoutMs: req.connectTimeoutMs,
+    idleTimeoutMs: req.idleTimeoutMs,
+    debug: req.debug,
+    onProgress: req.onProgress,
   });
 
   return {
@@ -113,7 +125,12 @@ function extractCharterModel(body: string): string | undefined {
   const headingIdx = body.search(/##\s+Model/i);
   if (headingIdx === -1) return undefined;
   const tail = body.slice(headingIdx, headingIdx + 400);
-  const m = tail.match(/Preferred:\s*([\w.\-/]+)/i);
+  // `Preferred:` may be followed immediately by a model id (`Preferred: claude-sonnet-4.5`)
+  // or by inline whitespace + a newline + a sub-list (`Preferred:\n  - ...`). Require
+  // **at least one word-character** in the captured id, otherwise fall through.
+  // The earlier regex `\s*([\w.\-/]+)` matched a bare `-` when the next non-space token
+  // was a list bullet, producing model "-" which the SDK rejects.
+  const m = tail.match(/Preferred:[ \t]+([A-Za-z][\w.\-/]*)/);
   if (m && m[1] && m[1].toLowerCase() !== "auto") return m[1];
   return undefined;
 }

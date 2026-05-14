@@ -35,6 +35,12 @@ export interface ProviderSessionConfig {
   events?: ProviderSessionEvents;
   /** Optional idle timeout in ms; defaults to 600s. */
   idleTimeoutMs?: number;
+  /** SDK connect timeout in ms; defaults to 20s. Without this, a stuck client.start() hangs the whole run. */
+  connectTimeoutMs?: number;
+  /** Print SDK init progress + raise SDK log level to "debug". */
+  debug?: boolean;
+  /** Lifecycle markers ("loading sdk", "connecting", "session created") for the CLI to render. */
+  onProgress?: (stage: string) => void;
 }
 
 export interface ProviderResult {
@@ -44,17 +50,47 @@ export interface ProviderResult {
 }
 
 let cachedClient: unknown | undefined;
+let cachedClientLogLevel: "error" | "warn" | "info" | "debug" | undefined;
 
 async function getClient(logLevel: "error" | "warn" | "info" | "debug" = "error"): Promise<unknown> {
-  if (cachedClient) return cachedClient;
+  // If the log level changed (e.g. --debug was passed on a subsequent call), rebuild.
+  if (cachedClient && cachedClientLogLevel === logLevel) return cachedClient;
   const sdk = (await import("@github/copilot-sdk").catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(
       `failed to load @github/copilot-sdk — is it installed? Run 'npm install' in the pwagent dir. (${msg})`,
     );
   })) as { CopilotClient: new (opts: unknown) => unknown };
-  cachedClient = new sdk.CopilotClient({ autoStart: true, logLevel });
+  cachedClient = new sdk.CopilotClient({ autoStart: false, logLevel });
+  cachedClientLogLevel = logLevel;
   return cachedClient;
+}
+
+/** Map an SDK / auth failure message to an actionable hint. */
+function actionableHint(rawMessage: string): string | undefined {
+  const m = rawMessage.toLowerCase();
+  if (m.includes("copilot cli not installed") || m.includes("gh copilot")) {
+    return "install the Copilot CLI: `winget install GitHub.cli.copilot` or `gh extension install github/gh-copilot`";
+  }
+  if (m.includes("scope") || m.includes("permission") || m.includes("forbidden")) {
+    return "your gh token may lack the copilot scope. Run: `gh auth refresh -h github.com -s copilot`";
+  }
+  if (
+    m.includes("auth") ||
+    m.includes("token") ||
+    m.includes("login") ||
+    m.includes("not signed in") ||
+    m.includes("unauthor")
+  ) {
+    return "authenticate with: `pwagent login` (wraps `gh auth login --web`)";
+  }
+  if (m.includes("subscription") || m.includes("copilot")) {
+    return "this GitHub account may not have an active Copilot subscription. Check at https://github.com/settings/copilot";
+  }
+  if (m.includes("etimedout") || m.includes("econnrefused") || m.includes("network")) {
+    return "network reachability to api.githubcopilot.com may be blocked. Check corporate proxy / VPN.";
+  }
+  return undefined;
 }
 
 export interface ReachabilityResult {
@@ -179,7 +215,11 @@ export async function probeCopilotReachable(timeoutMs = 5_000): Promise<Reachabi
 export async function runProviderSession(cfg: ProviderSessionConfig): Promise<ProviderResult> {
   const started = Date.now();
   const idleMs = cfg.idleTimeoutMs ?? 600_000;
-  const client = (await getClient()) as {
+  const connectMs = cfg.connectTimeoutMs ?? 20_000;
+  const progress = (stage: string) => cfg.onProgress?.(stage);
+
+  progress("loading sdk");
+  const client = (await getClient(cfg.debug ? "debug" : "error")) as {
     start(): Promise<void>;
     getState(): string;
     createSession(opts: unknown): Promise<{
@@ -190,9 +230,35 @@ export async function runProviderSession(cfg: ProviderSessionConfig): Promise<Pr
   };
 
   if (typeof client.getState === "function" && client.getState() !== "connected") {
-    await client.start();
+    progress("connecting");
+    try {
+      const startPromise = client.start();
+      let timer: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Copilot SDK did not connect within ${connectMs / 1000}s — likely missing copilot scope on gh token, missing Copilot CLI, or network unreachable`,
+              ),
+            ),
+          connectMs,
+        );
+      });
+      try {
+        await Promise.race([startPromise, timeoutPromise]);
+      } finally {
+        if (timer) clearTimeout(timer);
+        startPromise.catch(() => {});
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const hint = actionableHint(msg);
+      throw new Error(hint ? `${msg}\n  → ${hint}` : msg);
+    }
   }
 
+  progress("creating session");
   const session = await client.createSession({
     clientName: cfg.clientName,
     model: cfg.model,
@@ -201,6 +267,7 @@ export async function runProviderSession(cfg: ProviderSessionConfig): Promise<Pr
     tools: cfg.tools.map((t) => sdkToolDescriptor(t, cfg.toolContext)),
     onPermissionRequest: () => ({ kind: "approve-once" as const }),
   });
+  progress("session ready");
 
   let fullText = "";
   const toolCalls: { name: string; ok: boolean }[] = [];
@@ -289,6 +356,10 @@ function sdkToolDescriptor(tool: Tool, ctx: ToolContext): unknown {
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
+    // Our tools (read, write, edit, bash, grep) collide with SDK built-ins.
+    // overridesBuiltInTool: true tells the SDK to use our implementations,
+    // which enforce pwagent's path guard + bash allowlist + tool sandbox limits.
+    overridesBuiltInTool: true,
     handler: async (args: unknown) => {
       try {
         const result = await tool.run(args, ctx);
