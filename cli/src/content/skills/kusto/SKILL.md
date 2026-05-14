@@ -86,3 +86,58 @@ Federated identity (`Fed=true`) uses the user's Azure AD account. If `kusto.cli`
 - **Missing time bound.** `TestRuns | where Status == 'failed'` scans the whole table — always add `where TimeGenerated > ago(<window>)`.
 - **`summarize` without a key.** Returns one row; useful for counts, but if you want per-test breakdown, group by `TestName`.
 - **Backslash escaping in bash.** Wrap KQL in single quotes when invoked from `bash` to avoid shell-mangled queries.
+
+## Known clusters
+
+Agents read the canonical registry from `repos.json → kusto_clusters` (or `~/.pwagent/config.json → kustoClusters`). Three are pre-configured in the example config:
+
+| Key | Cluster | Database | Use for |
+|---|---|---|---|
+| `1es` | `https://1es.kusto.windows.net` | `AzureDevOps` | ADO build / pipeline / test-result telemetry. Default for `analyze --flakes`. |
+| `aria` | `https://ariav2.kusto.windows.net` | `AriaBridge` | Generic Aria v2 bridge. Richer flake context when 1es alone isn't enough. |
+| `powerapps-engineering` | `https://kusto.aria.microsoft.com` | `9e3b07ee31d44eb9aba317884f5e8ad4` | PowerApps test telemetry (Aria). Primary tables: `testrun` (per-run rows) and `testresult` (per-individual-outcome rows). |
+
+### Discover a table's schema before writing the query
+
+`getschema` returns the column list + types. Always run it first when a query is misbehaving — column names drift across cluster migrations.
+
+```kql
+cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testrun
+| getschema
+
+cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testresult
+| getschema
+```
+
+### PowerApps-Engineering — testrun vs testresult
+
+| Table | Granularity | Typical filters |
+|---|---|---|
+| `testrun` | one row per **test run** (e.g. one PR check, one nightly build) | `Pipeline`, `Branch`, `Status` (`Passed` / `Failed` / `Cancelled`), `StartedAt`, `CompletedAt` |
+| `testresult` | one row per **individual test outcome** within a run | `TestName`, `Outcome` (`Passed` / `Failed` / `Skipped`), `DurationMs`, `FailureMessage`, `TestRunId` (join key to `testrun`) |
+
+**Flake-rank pattern for the PowerApps-Engineering cluster**:
+
+```kql
+let _pipeline = 23878;
+let _window   = 30d;
+let _top      = 10;
+cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testresult
+| where TimeGenerated > ago(_window)
+| join kind=inner (
+    cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testrun
+    | where Pipeline == _pipeline
+    | project TestRunId
+  ) on TestRunId
+| summarize
+    Runs       = count(),
+    Failed     = countif(Outcome == 'Failed'),
+    LastFailed = maxif(TimeGenerated, Outcome == 'Failed')
+  by TestName
+| extend FailureRate = round(todouble(Failed) / todouble(Runs), 3)
+| where Runs >= 5 and FailureRate > 0.1
+| top _top by FailureRate desc
+| project TestName, Runs, Failed, FailureRate, LastFailed
+```
+
+Save canonical KQL queries under `data/kql/<purpose>.kql` so multiple agents can reuse them.

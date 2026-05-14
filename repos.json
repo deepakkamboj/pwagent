@@ -1,0 +1,1349 @@
+{
+  "tenant_id": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+  "ado_scope": "499b84ac-1321-427f-aa17-267ca6975798/.default",
+  "kusto_clusters": {
+    "1es": {
+      "url": "https://1es.kusto.windows.net",
+      "database": "AzureDevOps",
+      "_note": "ADO build / pipeline / test-result telemetry"
+    },
+    "aria": {
+      "url": "https://ariav2.kusto.windows.net",
+      "database": "AriaBridge",
+      "_note": "Generic Aria v2 bridge"
+    },
+    "powerapps-engineering": {
+      "url": "https://kusto.aria.microsoft.com",
+      "database": "9e3b07ee31d44eb9aba317884f5e8ad4",
+      "displayName": "PowerApps-Engineering",
+      "_note": "Aria cluster for PowerApps test telemetry. Primary tables: testrun, testresult.",
+      "tables": {
+        "testrun": "one row per test run; coarse-grained (run id, pipeline, branch, started, completed, status)",
+        "testresult": "one row per individual test outcome inside a run; fine-grained (testName, outcome, duration, failureMessage)"
+      },
+      "schemaDiscovery": [
+        "cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testrun | getschema",
+        "cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testresult | getschema"
+      ]
+    }
+  },
+  "repos": [
+    {
+      "key": "unified-client",
+      "displayName": "Unified Client",
+      "ado": {
+        "org": "dynamicscrm",
+        "project": "OneCRM"
+      },
+      "pipelines": [
+        {
+          "id": 23878,
+          "name": "CI Chrome",
+          "category": "ci",
+          "track": true,
+          "sourceOfTruth": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23878",
+          "trigger": "ci"
+        },
+        {
+          "id": 22604,
+          "name": "Pull Request",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=22604",
+          "trigger": "pr"
+        },
+        {
+          "id": 27160,
+          "name": "Buddy",
+          "category": "buddy",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=27160",
+          "trigger": "manual"
+        },
+        {
+          "id": 23865,
+          "name": "Playwright Nightly",
+          "category": "nightly",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23865",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 23863,
+          "name": "Playwright Weekly",
+          "category": "weekly",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23863",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 23868,
+          "name": "Playwright Gauntlet",
+          "category": "gauntlet",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23868",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 23864,
+          "name": "Rolling CIT",
+          "category": "ci",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23864",
+          "trigger": "ci"
+        },
+        {
+          "id": 23872,
+          "name": "Copilot Daily BAP",
+          "category": "nightly",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23872",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 23867,
+          "name": "Converged App BAP",
+          "category": "nightly",
+          "track": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23867",
+          "trigger": "schedule",
+          "schedule": "Triggers every 8 hours"
+        },
+        {
+          "id": 23811,
+          "name": "Perf Run",
+          "category": "perf",
+          "track": false,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=23811",
+          "trigger": "schedule",
+          "schedule": "daily build triggered every six hours (UTC)"
+        },
+        {
+          "id": 24035,
+          "name": "CDN Weekly Integration Test",
+          "category": "weekly",
+          "track": false,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=24035",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 27221,
+          "name": "Controls Timeline",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=27221",
+          "trigger": "ci"
+        }
+      ],
+      "prKustoOrg": "dynamicscrm",
+      "githubRepo": "CRM.Client.UnifiedClient",
+      "defaultBranch": "master",
+      "description": "Browser-based Unified Client for Dynamics 365 CRM",
+      "purpose": "Provides the primary web UI for Dynamics 365 Customer Engagement apps (Sales, Service, Marketing). Responsible for model-driven app rendering, form engine, and client-side extensibility platform."
+    },
+    {
+      "key": "power-platform-ux",
+      "displayName": "Power Platform UX",
+      "ado": {
+        "org": "msazure",
+        "project": "OneAgile"
+      },
+      "pipelines": [
+        {
+          "id": 354584,
+          "name": "CI",
+          "category": "ci",
+          "track": true,
+          "sourceOfTruth": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=354584",
+          "trigger": "ci"
+        },
+        {
+          "id": 354583,
+          "name": "Pull Request",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=354583",
+          "trigger": "pr"
+        },
+        {
+          "id": 356845,
+          "name": "Buddy",
+          "category": "buddy",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=356845",
+          "trigger": "manual"
+        },
+        {
+          "id": 372076,
+          "name": "PR Pre-Checks",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=372076",
+          "trigger": "pr"
+        },
+        {
+          "id": 334064,
+          "name": "PPAC Test Nightly",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=334064",
+          "trigger": "schedule",
+          "schedule": "daily 20:30 Pacific Standard Time"
+        },
+        {
+          "id": 334063,
+          "name": "PPAC Preprod Nightly",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=334063",
+          "trigger": "schedule",
+          "schedule": "Wed 19:00 Pacific Standard Time; Mon,Tue,Thu,Fri,Sat,Sun 18:30 Pacific Standard Time"
+        },
+        {
+          "id": 410475,
+          "name": "Nightly: PowerVA FICS",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=410475",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 389590,
+          "name": "Nightly: Power Automate",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389590",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 383601,
+          "name": "Nightly: Test Harness",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=383601",
+          "trigger": "schedule",
+          "schedule": "Build every 4 hours"
+        },
+        {
+          "id": 384887,
+          "name": "Nightly: Sophia Platform",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=384887",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 385293,
+          "name": "Nightly: PVA",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385293",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 385053,
+          "name": "Nightly: Desktop Flow",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385053",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 399400,
+          "name": "Nightly: Knowledge",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=399400",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 402597,
+          "name": "Nightly: PVA Analytics V3",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=402597",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 406379,
+          "name": "Nightly: Agent Builder",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406379",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 428626,
+          "name": "Nightly: PowerApps Interface",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=428626",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 416713,
+          "name": "Nightly: App Insights",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=416713",
+          "trigger": "schedule",
+          "schedule": "M-S 5:00 AM (UTC) daily build"
+        },
+        {
+          "id": 385265,
+          "name": "Gauntlet: Portals Sitewide",
+          "category": "gauntlet",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385265",
+          "trigger": "schedule",
+          "schedule": "Dataprep - Daily CAN Sanity; Daily CAN Sanity; Dataprep - Weekly Tip Sanity; Weekly Tip Sanity; Dataprep - Weekly CAN prod Sanity; Weekly CAN prod Sanity"
+        },
+        {
+          "id": 392281,
+          "name": "Gauntlet: Manual",
+          "category": "gauntlet",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=392281",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 410503,
+          "name": "Synthetics: PowerVA FICS",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=410503",
+          "trigger": "schedule",
+          "schedule": "Every 15 Minutes"
+        },
+        {
+          "id": 389508,
+          "name": "Synthetics: Power Automate",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389508",
+          "trigger": "schedule",
+          "schedule": "Every 15 Minutes"
+        },
+        {
+          "id": 400481,
+          "name": "Synthetics: Support Experiences",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=400481",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 385294,
+          "name": "Synthetics: PVA",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385294",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 405768,
+          "name": "Synthetics: Admin Center Monitor",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=405768",
+          "trigger": "schedule",
+          "schedule": "Every 4 hours"
+        },
+        {
+          "id": 418031,
+          "name": "Synthetics: Portals Runtime",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=418031",
+          "trigger": "schedule",
+          "schedule": "Every 10 Minutes"
+        },
+        {
+          "id": 398302,
+          "name": "Synthetics: AI Flows",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=398302",
+          "trigger": "schedule",
+          "schedule": "Every 15 Minutes"
+        },
+        {
+          "id": 389591,
+          "name": "Runner: Power Automate",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389591",
+          "trigger": "schedule",
+          "schedule": "M-S every hour daily build"
+        },
+        {
+          "id": 396817,
+          "name": "Runner: Power Pages",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=396817",
+          "trigger": "schedule",
+          "schedule": "Run once everyday at midnight"
+        },
+        {
+          "id": 416715,
+          "name": "Runner: App Insights",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=416715",
+          "trigger": "schedule",
+          "schedule": "M-S every hour daily build"
+        },
+        {
+          "id": 385795,
+          "name": "Runner: AI Flows",
+          "category": "synthetics",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385795",
+          "trigger": "schedule",
+          "schedule": "M-S every hour daily build"
+        },
+        {
+          "id": 450151,
+          "name": "Playwright Continuous",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=450151",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 445470,
+          "name": "Portals Runtime Smoke Tests",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=445470",
+          "trigger": "schedule",
+          "schedule": "Daily at 10 PM UTC"
+        },
+        {
+          "id": 444001,
+          "name": "PPAC Security Hub Runners",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=444001",
+          "trigger": "schedule",
+          "schedule": "PPAC security hub runners - every 15 mins trigger"
+        },
+        {
+          "id": 384240,
+          "name": "Dev Center",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=384240",
+          "trigger": "ci"
+        },
+        {
+          "id": 384686,
+          "name": "Rush Update",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=384686",
+          "trigger": "ci"
+        },
+        {
+          "id": 386544,
+          "name": "Build Cache Population",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=386544",
+          "trigger": "ci"
+        },
+        {
+          "id": 386378,
+          "name": "Storybooks Publish",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=386378",
+          "trigger": "ci"
+        },
+        {
+          "id": 385558,
+          "name": "Release Records",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385558",
+          "trigger": "ci"
+        },
+        {
+          "id": 385074,
+          "name": "Daily Code Coverage",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385074",
+          "trigger": "ci"
+        },
+        {
+          "id": 386371,
+          "name": "Compliance",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=386371",
+          "trigger": "ci"
+        },
+        {
+          "id": 349228,
+          "name": "Auto Publish",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=349228",
+          "trigger": "ci"
+        },
+        {
+          "id": 412610,
+          "name": "Deploy: Webplayer NuGet",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=412610",
+          "trigger": "manual"
+        },
+        {
+          "id": 407516,
+          "name": "Deploy: Preprod Orchestrator",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407516",
+          "trigger": "manual"
+        },
+        {
+          "id": 405125,
+          "name": "Deploy: CD Orchestrator",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=405125",
+          "trigger": "manual"
+        },
+        {
+          "id": 438955,
+          "name": "Deploy: Vibe Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=438955",
+          "trigger": "manual"
+        },
+        {
+          "id": 441739,
+          "name": "Deploy: Vibe ROW",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=441739",
+          "trigger": "manual"
+        },
+        {
+          "id": 439530,
+          "name": "Deploy: Vibe Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=439530",
+          "trigger": "manual"
+        },
+        {
+          "id": 439523,
+          "name": "Deploy: Vibe Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=439523",
+          "trigger": "manual"
+        },
+        {
+          "id": 439117,
+          "name": "Deploy: Vibe Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=439117",
+          "trigger": "manual"
+        },
+        {
+          "id": 438953,
+          "name": "Deploy: Vibe PowerApps.com",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=438953",
+          "trigger": "manual"
+        },
+        {
+          "id": 407101,
+          "name": "Deploy: PPAC Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407101",
+          "trigger": "manual"
+        },
+        {
+          "id": 411704,
+          "name": "Deploy: PPAC ROW",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=411704",
+          "trigger": "manual"
+        },
+        {
+          "id": 446216,
+          "name": "Deploy: PPAC ROW Internal",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=446216",
+          "trigger": "manual"
+        },
+        {
+          "id": 406365,
+          "name": "Deploy: PPAC Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406365",
+          "trigger": "manual"
+        },
+        {
+          "id": 450148,
+          "name": "Deploy: PPAC Prod Scheduler",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=450148",
+          "trigger": "manual"
+        },
+        {
+          "id": 407149,
+          "name": "Deploy: Copilot Studio Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407149",
+          "trigger": "manual"
+        },
+        {
+          "id": 420245,
+          "name": "Deploy: Copilot Studio Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=420245",
+          "trigger": "manual"
+        },
+        {
+          "id": 420248,
+          "name": "Deploy: Copilot Studio Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=420248",
+          "trigger": "manual"
+        },
+        {
+          "id": 420246,
+          "name": "Deploy: Copilot Studio ROW",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=420246",
+          "trigger": "manual"
+        },
+        {
+          "id": 420249,
+          "name": "Deploy: Copilot Studio SOV",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=420249",
+          "trigger": "manual"
+        },
+        {
+          "id": 451849,
+          "name": "Deploy: Copilot Studio Regional",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=451849",
+          "trigger": "manual"
+        },
+        {
+          "id": 406530,
+          "name": "Deploy: Copilot Studio Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406530",
+          "trigger": "manual"
+        },
+        {
+          "id": 407569,
+          "name": "Deploy: Power Automate Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407569",
+          "trigger": "manual"
+        },
+        {
+          "id": 423153,
+          "name": "Deploy: Power Automate Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=423153",
+          "trigger": "manual"
+        },
+        {
+          "id": 427381,
+          "name": "Deploy: Power Automate Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=427381",
+          "trigger": "manual"
+        },
+        {
+          "id": 427383,
+          "name": "Deploy: Power Automate SOV",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=427383",
+          "trigger": "manual"
+        },
+        {
+          "id": 452508,
+          "name": "Deploy: Power Automate Regional",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=452508",
+          "trigger": "manual"
+        },
+        {
+          "id": 406531,
+          "name": "Deploy: Power Automate Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406531",
+          "trigger": "manual"
+        },
+        {
+          "id": 407103,
+          "name": "Deploy: Project Maven Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407103",
+          "trigger": "manual"
+        },
+        {
+          "id": 423865,
+          "name": "Deploy: Project Maven Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=423865",
+          "trigger": "manual"
+        },
+        {
+          "id": 423873,
+          "name": "Deploy: Project Maven Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=423873",
+          "trigger": "manual"
+        },
+        {
+          "id": 423873,
+          "name": "Deploy: Project Maven Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=423873",
+          "trigger": "manual"
+        },
+        {
+          "id": 406225,
+          "name": "Deploy: Project Maven Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406225",
+          "trigger": "manual"
+        },
+        {
+          "id": 407268,
+          "name": "Deploy: Project Maven Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407268",
+          "trigger": "manual"
+        },
+        {
+          "id": 407152,
+          "name": "Deploy: Maker Portal Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407152",
+          "trigger": "manual"
+        },
+        {
+          "id": 412644,
+          "name": "Deploy: Maker Portal Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=412644",
+          "trigger": "manual"
+        },
+        {
+          "id": 412641,
+          "name": "Deploy: Maker Portal Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=412641",
+          "trigger": "manual"
+        },
+        {
+          "id": 414471,
+          "name": "Deploy: Maker Portal SOV",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=414471",
+          "trigger": "manual"
+        },
+        {
+          "id": 406529,
+          "name": "Deploy: Maker Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406529",
+          "trigger": "manual"
+        },
+        {
+          "id": 404854,
+          "name": "Deploy: Dataverse Portal Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=404854",
+          "trigger": "manual"
+        },
+        {
+          "id": 407101,
+          "name": "Deploy: Power Pages Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407101",
+          "trigger": "manual"
+        },
+        {
+          "id": 413460,
+          "name": "Deploy: Power Pages Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=413460",
+          "trigger": "manual"
+        },
+        {
+          "id": 414799,
+          "name": "Deploy: Power Pages Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=414799",
+          "trigger": "manual"
+        },
+        {
+          "id": 419320,
+          "name": "Deploy: Power Pages SOV",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=419320",
+          "trigger": "manual"
+        },
+        {
+          "id": 406432,
+          "name": "Deploy: Power Pages Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406432",
+          "trigger": "manual"
+        },
+        {
+          "id": 421683,
+          "name": "Deploy: Agent Builder Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=421683",
+          "trigger": "manual"
+        },
+        {
+          "id": 421684,
+          "name": "Deploy: Agent Builder Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=421684",
+          "trigger": "manual"
+        },
+        {
+          "id": 419351,
+          "name": "Deploy: Agent Builder microsoft.com",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=419351",
+          "trigger": "manual"
+        },
+        {
+          "id": 407103,
+          "name": "Deploy: Sophia Preprod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=407103",
+          "trigger": "manual"
+        },
+        {
+          "id": 408262,
+          "name": "Deploy: Sophia Preview",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=408262",
+          "trigger": "manual"
+        },
+        {
+          "id": 415952,
+          "name": "Deploy: Sophia Prod",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=415952",
+          "trigger": "manual"
+        },
+        {
+          "id": 406221,
+          "name": "Deploy: Sophia Test",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=406221",
+          "trigger": "manual"
+        },
+        {
+          "id": 443341,
+          "name": "Process Mining Build Publish",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=443341",
+          "trigger": "ci"
+        },
+        {
+          "id": 417081,
+          "name": "MCS QFE Shiproom Approval",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=417081",
+          "trigger": "ci"
+        },
+        {
+          "id": 410199,
+          "name": "Create Managed VHD Linux",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=410199",
+          "trigger": "ci"
+        },
+        {
+          "id": 357306,
+          "name": "Renovate Bot Buddy",
+          "category": "buddy",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=357306",
+          "trigger": "manual"
+        }
+      ],
+      "prKustoOrg": "msazure",
+      "githubRepo": "power-platform-ux",
+      "defaultBranch": "master",
+      "description": "Power Platform maker web UI (Power Apps, Power Automate, Power Pages)",
+      "purpose": "Hosts the browser-based maker experience for Power Platform. Covers the canvas app studio, Power Automate flow designer, Power Pages editor, and shared UX platform used across all Power Platform products."
+    },
+    {
+      "key": "powerapps-client",
+      "displayName": "PowerApps Client",
+      "ado": {
+        "org": "msazure",
+        "project": "OneAgile"
+      },
+      "prKustoOrg": "msazure",
+      "githubRepo": "PowerApps-Client",
+      "pipelines": [
+        {
+          "id": 350100,
+          "name": "CI",
+          "category": "ci",
+          "track": true,
+          "sourceOfTruth": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=350100",
+          "trigger": "ci"
+        },
+        {
+          "id": 362190,
+          "name": "Mobile Player CI",
+          "category": "ci",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=362190",
+          "trigger": "ci"
+        },
+        {
+          "id": 449187,
+          "name": "D365 Mobile Windows CI",
+          "category": "ci",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=449187",
+          "trigger": "ci"
+        },
+        {
+          "id": 349230,
+          "name": "PR Check",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=349230",
+          "trigger": "pr"
+        },
+        {
+          "id": 339344,
+          "name": "Studio & WebPlayer PR",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=339344",
+          "trigger": "pr"
+        },
+        {
+          "id": 389737,
+          "name": "Player PR",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389737",
+          "trigger": "pr"
+        },
+        {
+          "id": 386325,
+          "name": "Offline C++ PR",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=386325",
+          "trigger": "pr"
+        },
+        {
+          "id": 388873,
+          "name": "D365 Mobile Windows PR",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=388873",
+          "trigger": "pr"
+        },
+        {
+          "id": 386349,
+          "name": "D365 Mobile PR Build",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=386349",
+          "trigger": "pr"
+        },
+        {
+          "id": 389194,
+          "name": "Validate PR Changes",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389194",
+          "trigger": "pr"
+        },
+        {
+          "id": 390254,
+          "name": "FSM iOS & Android PR",
+          "category": "pr",
+          "track": true,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=390254",
+          "trigger": "pr"
+        },
+        {
+          "id": 347762,
+          "name": "Buddy CI",
+          "category": "buddy",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=347762",
+          "trigger": "manual"
+        },
+        {
+          "id": 354977,
+          "name": "Player Buddy",
+          "category": "buddy",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=354977",
+          "trigger": "manual"
+        },
+        {
+          "id": 399744,
+          "name": "Mobile Player Tests",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=399744",
+          "trigger": "schedule",
+          "schedule": "Daily Test Run"
+        },
+        {
+          "id": 389755,
+          "name": "Player Mobile Dogfood",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389755",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 390142,
+          "name": "iOS Native Unit Tests",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=390142",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 396856,
+          "name": "FSM Native Daily Build",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=396856",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 413258,
+          "name": "FSM Scenario Tests Android",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=413258",
+          "trigger": "schedule",
+          "schedule": "Daily 12:00 PM UTC"
+        },
+        {
+          "id": 389375,
+          "name": "Prodgates",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389375",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 389390,
+          "name": "Prodgates Private",
+          "category": "nightly",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389390",
+          "trigger": "schedule",
+          "schedule": ""
+        },
+        {
+          "id": 372984,
+          "name": "Deploy: Wrap Release",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=372984",
+          "trigger": "manual"
+        },
+        {
+          "id": 404723,
+          "name": "Deploy: Mobile Player",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=404723",
+          "trigger": "manual"
+        },
+        {
+          "id": 385691,
+          "name": "Deploy: Sales Android/iOS",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=385691",
+          "trigger": "manual"
+        },
+        {
+          "id": 354699,
+          "name": "Auto Publish",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=354699",
+          "trigger": "manual"
+        },
+        {
+          "id": 356944,
+          "name": "Developer Deployment",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=356944",
+          "trigger": "manual"
+        },
+        {
+          "id": 426702,
+          "name": "Increment Version",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=426702",
+          "trigger": "ci"
+        },
+        {
+          "id": 397639,
+          "name": "Power Apps Increment Version",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=397639",
+          "trigger": "ci"
+        },
+        {
+          "id": 427319,
+          "name": "WebPlayer SDK Release",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=427319",
+          "trigger": "manual"
+        },
+        {
+          "id": 396745,
+          "name": "FSM Trigger Build",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=396745",
+          "trigger": "manual"
+        },
+        {
+          "id": 362628,
+          "name": "FSM Build",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=362628",
+          "trigger": "manual"
+        },
+        {
+          "id": 386322,
+          "name": "D365 Mobile Android Debug",
+          "category": "deployment",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=386322",
+          "trigger": "manual"
+        },
+        {
+          "id": 369099,
+          "name": "Mobile CodeQL",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=369099",
+          "trigger": "ci"
+        },
+        {
+          "id": 389773,
+          "name": "Mobile Windows CodeQL",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389773",
+          "trigger": "ci"
+        },
+        {
+          "id": 362454,
+          "name": "Wrap Base Package",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=362454",
+          "trigger": "ci"
+        },
+        {
+          "id": 360647,
+          "name": "Shrinkwrap",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=360647",
+          "trigger": "ci"
+        },
+        {
+          "id": 389193,
+          "name": "Fallback Switches",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=389193",
+          "trigger": "ci"
+        },
+        {
+          "id": 412951,
+          "name": "Localization Slipstream",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=412951",
+          "trigger": "ci"
+        },
+        {
+          "id": 390102,
+          "name": "Localization Import PR",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=390102",
+          "trigger": "ci"
+        },
+        {
+          "id": 390063,
+          "name": "Localization Handoff",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=390063",
+          "trigger": "ci"
+        },
+        {
+          "id": 423254,
+          "name": "Localization",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=423254",
+          "trigger": "ci"
+        },
+        {
+          "id": 398279,
+          "name": "Check Untranslated Strings",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=398279",
+          "trigger": "ci"
+        },
+        {
+          "id": 398080,
+          "name": "Check Shiproom Approval",
+          "category": "build",
+          "track": false,
+          "url": "https://dev.azure.com/msazure/OneAgile/_build?definitionId=398080",
+          "trigger": "ci"
+        }
+      ],
+      "defaultBranch": "master",
+      "description": "PowerApps canvas app player and runtime client",
+      "purpose": "Delivers the runtime engine that plays published Power Apps canvas apps in browser and mobile. Covers the PA client SDK, control framework, offline support, and the mobile app shell used by end-users."
+    },
+    {
+      "key": "playwright-samples",
+      "displayName": "Power Platform Playwright Samples (OSS)",
+      "ado": {
+        "org": "dynamicscrm",
+        "project": "OneCRM"
+      },
+      "github": {
+        "org": "microsoft",
+        "repo": "power-platform-playwright-samples",
+        "url": "https://github.com/microsoft/power-platform-playwright-samples"
+      },
+      "docs_url": "https://review.learn.microsoft.com/en-us/power-platform/developer/playwright-samples/overview?branch=main",
+      "pipelines": [
+        {
+          "id": 31659,
+          "name": "Playwright Samples CI",
+          "category": "ci",
+          "track": true,
+          "sourceOfTruth": true,
+          "url": "https://dev.azure.com/dynamicscrm/OneCRM/_build?definitionId=31659",
+          "trigger": "ci",
+          "_note": "Customer-facing OSS samples repo CI \u2014 OKR: all tests green"
+        }
+      ]
+    }
+  ]
+}

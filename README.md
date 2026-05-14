@@ -39,6 +39,7 @@ Standalone CLI for multi-agent Playwright testing. **Squad design, self-containe
 
 - [What it is](#what-it-is)
 - [Where pwagent runs (IDE / CLI compatibility)](#where-pwagent-runs-ide--cli-compatibility)
+- [Usage guide with example prompts](USAGE.md)
 - [Documentation site](#documentation-site)
 - [Design rationale](#design-rationale)
 - [Architecture](#architecture)
@@ -528,6 +529,94 @@ pwagent audit export [--since 7d] [--type <t>] [--agent <a>] [--format jsonl|jso
 # service install (platform-native unattended scheduler)
 pwagent service install | uninstall | status
 ```
+
+### Agents and their arguments
+
+pwagent ships **13 specialist agents**. Multi-purpose agents specialize via flags (`fix --scope test|product`, `validate --test|--a11y`, `discover --watch`, etc.) — fewer charters, sharper composition.
+
+| Agent | Purpose | Key arguments |
+|---|---|---|
+| **supervisor** | Top-level router (default when no agent named) | (none — invoked by `pwagent run "<prompt>"` without an agent) |
+| **discover** | Find failing tests; optional CI daemon | `--source local\|ado\|github\|kusto` · `--pipeline <id>` · `--build <id>` · `--run-id <id>` · `--window 7d` · `--watch` · `--poll-seconds 300` · `--max-dispatch 10` · `--status` · `--stop` |
+| **triage** | Classify failures (ProductBug / TestCodeBug / Environment / Inconclusive) | `--run-id <id>` · `--artifact <path>` · `--example` (canned fixture) |
+| **analyze** | Read-only analyzer; three orthogonal modes | `--scenarios [--path <dir>] [--min-coverage N] [--fail-on-critical]` · `--flakes --pipeline <id> [--top N] [--window <dur>] [--format json\|csv]` · `--test-quality --files <glob> [--severity-min Low\|Medium\|High\|Critical] [--file-bug] [--pr-comment <pr-id>]` |
+| **review** | HITL stamp gate; pause until human approves | (interactive) · `--list` · `--batch < stamps.txt` |
+| **plan** | Build an ordered fix plan | `--failures <path>` · `--from-scenario` · `--from-triage <id>` |
+| **fix** | Patcher (atomic) + orchestrator | **Scope (atomic):** `--scope test\|product\|auto` · `--plan <path> --test <name>` · `--from-triage <id>` · `--bug AB#<id>` · `--diff-only` · `--skip-gate` (audited). **Orchestrate (full chain):** `--orchestrate --ado-pipeline <id>` · `--orchestrate --ado-build <id>` · `--orchestrate --bug AB#<id>` · `--orchestrate --bugs --top N --area <path>` · `--max-failures 25` · `--auto-stamp` (audited) · `--bundle-pr` |
+| **validate** | Run something twice; report delta | `--test <file> [--repeat N] [--grep <pat>] [--project <name>]` · `--a11y --bug AB#<id> [--url <url>]` |
+| **publish** | Open PR via REST (ADO) or `gh` (GitHub) | `--branch <name>` · `--target <branch>` · `--bug AB#<id>` · `--results <path>` · `--draft` · `--reviewer @user` · `--allow-large-pr` |
+| **author** | New-test writer with 7-day probation | `--scenario "<text>"` · `--from-gap ScenarioGap-<id>` · `--coverage-gap <path>` · `--cwd <path>` |
+| **auth** | Auth-flow specialist | `--add-role <name>` · `--refresh-state <role>` · `--diagnose --trace <path>` · free-text |
+| **record** | Canonical-state writer (two kinds) | **Matrix:** `--kind matrix --op import\|sync\|link\|query\|decide\|stamp\|gap` plus per-op flags (`--bug-ids`, `--tests <glob>`, `--bug` + `--test`, `--verdict`, `--confidence`, `--rationale`, `--stamp p\|t\|s\|o`, `--operator`, `--gap`, `--severity`). **Patterns:** `--kind patterns --from <fix-results.json>` |
+| **report** | Weekly + ad-hoc reports | `--window 7d\|30d` · `--since <date> --until <date>` · `--kind weekly\|flake-rank\|triage\|hitl-audit\|scenario-coverage\|test-health\|self-health` · `--commit` (commits to repo) |
+
+**Global flags** that work on every agent invocation:
+
+| Flag | Meaning |
+|---|---|
+| `--model <id>` | Override the charter's preferred model for this call |
+| `--mode direct\|light\|standard\|full` | Force a response mode (skip the coordinator's inference) |
+| `--cwd <path>` | Resolve workspace overrides from this directory |
+| `--dry-run` | Resolve charter + skills + tools, print system message, **do not** call the SDK |
+| `--json` | Stream JSON events to stdout instead of markdown |
+| `--skills <a,b,c>` | Replace skill-aware inference with this explicit set |
+| `--tool-timeout-s <n>` | Per-tool timeout (default 120) |
+| `--idle-timeout-s <n>` | SDK session idle timeout (default per mode) |
+| `--skip-gate` | Bypass reviewer gates (recorded in audit as `gateSkipped: true`) |
+
+#### The canonical chain — `fix --orchestrate`
+
+```
+discover (--source ado|github|local|kusto)
+  → triage (parallel fan-out, one per failure)
+    → review (HITL serial gate; skip with --auto-stamp)
+      → plan
+        → fix --scope <test|product>  (parallel fan-out, one per plan entry)
+          → validate --test            (twice — gate two greens)
+            → publish                  (one PR per group)
+              → record --kind matrix   (link bug ↔ test ↔ verdict ↔ stamp)
+```
+
+`validate --a11y` runs **alongside** `validate --test` when accessibility is in scope. `record --kind patterns` runs **after** the PR merges. `report` runs **on a schedule** and reads the matrix + audit log.
+
+#### Quick examples per agent
+
+```bash
+# Full chain — fix everything red in an ADO pipeline
+pwagent run fix --orchestrate --ado-pipeline 23878 --auto-stamp
+
+# Daemon — poll ADO + GitHub Actions, dispatch triage on new failures
+pwagent run discover --watch --poll-seconds 300
+
+# One-shot discover from Kusto
+pwagent run discover --source kusto --pipeline 23878 --window 7d
+
+# Atomic test-side fix from a stamped plan
+pwagent run fix --scope test --plan ./fix-plan.json --test "login should redirect"
+
+# Run a test twice
+pwagent run validate --test tests/login.spec.ts --repeat 2
+
+# axe-core before/after delta on an ADO bug
+pwagent run validate --a11y --bug AB#54321
+
+# Grade test code quality
+pwagent run analyze --test-quality --files "tests/**/*.spec.ts" --severity-min High
+
+# Top-10 flakes via Kusto
+pwagent run analyze --flakes --pipeline 23878 --top 10 --window 30d
+
+# Author a new test from a free-text scenario
+pwagent run author --scenario "logged-in user applies a coupon and removes it"
+
+# Import bugs into the traceability matrix
+pwagent run record --kind matrix --op import --source ado --bug-ids 12345,12346
+
+# Extract reusable patterns from a verified fix
+pwagent run record --kind patterns --from ./fix-results.json
+```
+
+Full examples and end-to-end workflows live in [USAGE.md](USAGE.md).
 
 ### Coordinator runtime — what `pwagent run` actually does
 

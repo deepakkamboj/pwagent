@@ -19,6 +19,31 @@
     "defaultRepo": "<your-repo>"
   },
 
+  "identity": {
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "adoScope": "499b84ac-1321-427f-aa17-267ca6975798/.default",
+    "_comment": "tenantId = Microsoft AAD tenant; adoScope = Azure DevOps API scope. Both used by `az login` / Kusto / ADO REST."
+  },
+
+  "kustoClusters": {
+    "1es": {
+      "url": "https://1es.kusto.windows.net",
+      "database": "AzureDevOps",
+      "_comment": "ADO test telemetry. Default for `analyze --flakes`."
+    },
+    "aria": {
+      "url": "https://ariav2.kusto.windows.net",
+      "database": "AriaBridge",
+      "_comment": "Generic Aria v2 bridge for richer flake context when 1es alone isn't enough."
+    },
+    "powerapps-engineering": {
+      "url": "https://kusto.aria.microsoft.com",
+      "database": "9e3b07ee31d44eb9aba317884f5e8ad4",
+      "displayName": "PowerApps-Engineering",
+      "_comment": "Aria cluster for PowerApps test telemetry. Tables: testrun (one row per run), testresult (one row per individual test outcome). Discover schema with `cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testrun | getschema`."
+    }
+  },
+
   "repos": [
     {
       "name": "<your-repo>",
