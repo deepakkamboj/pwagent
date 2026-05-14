@@ -61,9 +61,13 @@ function findSquadCliRoot(): string | undefined {
  * Risk: Squad's UI surface changes across versions. We detect "didn't find
  * any of the expected patterns" and skip silently rather than crashing.
  */
-async function rebrandSquadShell(): Promise<void> {
+async function rebrandSquadShell(verbose = false): Promise<void> {
   const root = findSquadCliRoot();
-  if (!root) return;
+  if (!root) {
+    if (verbose) console.log(c.dim("  rebrand: squad-cli not resolvable from here"));
+    return;
+  }
+  if (verbose) console.log(c.dim(`  rebrand: patching ${root}`));
 
   const targets: Array<{ path: string; replacements: Array<[RegExp, string]> }> = [
     {
@@ -83,19 +87,30 @@ async function rebrandSquadShell(): Promise<void> {
   ];
 
   for (const t of targets) {
-    if (!existsSync(t.path)) continue;
+    if (!existsSync(t.path)) {
+      if (verbose) console.log(c.dim(`    skip: ${t.path} (not found)`));
+      continue;
+    }
     try {
       let src = await readFile(t.path, "utf8");
       let changed = false;
+      const hits: string[] = [];
       for (const [pat, repl] of t.replacements) {
         if (pat.test(src)) {
           src = src.replace(pat, repl);
           changed = true;
+          hits.push(pat.source);
         }
       }
-      if (changed) await writeFile(t.path, src, "utf8");
-    } catch {
-      /* ignore — Squad may have changed its UI in a way we can't patch */
+      if (changed) {
+        await writeFile(t.path, src, "utf8");
+        if (verbose) console.log(c.dim(`    patched: ${t.path} (${hits.length} patterns)`));
+      } else if (verbose) {
+        console.log(c.dim(`    ok:      ${t.path} (already patched or new layout)`));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (verbose) console.log(c.dim(`    fail:    ${t.path} (${msg})`));
     }
   }
 }
@@ -202,7 +217,28 @@ async function ensureScaffolding(cwd: string): Promise<void> {
 export async function startSquadShell(cwd: string): Promise<number> {
   await ensureScaffolding(cwd);
   await ensureCoordinatorManifest(cwd);
-  await rebrandSquadShell();
+  // Verbose during pivot phase so the user can see exactly what's being
+  // patched; flip to silent once the rebrand is stable across squad-cli versions.
+  await rebrandSquadShell(true);
+
+  // Resolve squad-cli's binary entry **before** spawning so we run the exact
+  // copy we just patched. Using `npx` may resolve to a different installation
+  // (global, npx cache) where our patches don't exist.
+  const squadCliRoot = findSquadCliRoot();
+  let squadCliEntry: string | undefined;
+  if (squadCliRoot) {
+    const candidate = join(squadCliRoot, "dist", "cli-entry.js");
+    if (existsSync(candidate)) squadCliEntry = candidate;
+  }
+
+  if (!squadCliEntry) {
+    console.error(
+      c.err("  squad-cli binary not found — falling back to `npx @bradygaster/squad-cli`"),
+    );
+    console.error(c.dim("  → patches may not apply to the npx-resolved copy"));
+  } else {
+    console.log(c.dim(`  squad-cli: ${squadCliEntry}`));
+  }
 
   console.log(c.dim("  launching GitHub Copilot CLI via Squad…"));
   console.log();
@@ -210,24 +246,34 @@ export async function startSquadShell(cwd: string): Promise<number> {
   return await new Promise<number>((resolvePromise) => {
     const isWin = process.platform === "win32";
 
-    // On Windows, npx is a .cmd shim. Node ≥ 18.20.2 / 20.12.2 / 21.7.3 refuses
-    // to spawn .cmd files without shell: true (CVE-2024-27980). The args here
-    // are not user-derived so shell injection isn't a real concern, but to be
-    // defensive we still wrap the command + args into a single string only
-    // when shell: true is in play.
-    const child = isWin
-      ? spawn("npx @bradygaster/squad-cli", {
-          cwd,
-          stdio: "inherit",
-          env: { ...process.env, SQUAD_HOST: "pwagent" },
-          shell: true,
-        })
-      : spawn("npx", ["@bradygaster/squad-cli"], {
-          cwd,
-          stdio: "inherit",
-          env: { ...process.env, SQUAD_HOST: "pwagent" },
-          shell: false,
-        });
+    let child;
+    if (squadCliEntry) {
+      // Direct node spawn — same copy we patched, no .cmd-shim issues, no
+      // npx-cache surprises.
+      child = spawn(process.execPath, [squadCliEntry], {
+        cwd,
+        stdio: "inherit",
+        env: { ...process.env, SQUAD_HOST: "pwagent" },
+        shell: false,
+      });
+    } else {
+      // Fallback: npx (may not see our patches). On Windows, npx is a .cmd
+      // shim and Node ≥18.20.2/20.12.2/21.7.3 refuses to spawn .cmd files
+      // without shell: true (CVE-2024-27980).
+      child = isWin
+        ? spawn("npx @bradygaster/squad-cli", {
+            cwd,
+            stdio: "inherit",
+            env: { ...process.env, SQUAD_HOST: "pwagent" },
+            shell: true,
+          })
+        : spawn("npx", ["@bradygaster/squad-cli"], {
+            cwd,
+            stdio: "inherit",
+            env: { ...process.env, SQUAD_HOST: "pwagent" },
+            shell: false,
+          });
+    }
 
     child.on("exit", (code) => resolvePromise(code ?? 0));
     child.on("error", (err) => {
