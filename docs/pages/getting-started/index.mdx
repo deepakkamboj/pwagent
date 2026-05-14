@@ -1,0 +1,60 @@
+---
+title: Getting Started
+---
+
+# Getting Started
+
+This section walks you from a clean checkout to a passing `pwagent doctor` and your first agent invocation, end-to-end. There are five steps, in order:
+
+1. **[Installation](/getting-started/installation)** — `npm install` + `npm run build` + `npm link --workspace cli`.
+2. **[Prerequisites](/getting-started/prerequisites)** — node, git, gh, az, axe-core, kusto, Playwright. `pwagent prereqs --install` covers the auto-installable ones.
+3. **[Authentication](/getting-started/authentication)** — `pwagent login` wraps `gh auth login --web` so the Copilot SDK can resolve a token.
+4. **[Your First Run](/getting-started/first-run)** — `pwagent run triage --run-id ...` and what to expect at each step.
+5. **[Initial Configuration](/getting-started/configuration)** — `~/.pwagent/config.json` field-by-field.
+
+## What you'll have at the end
+
+```
+binary version    0.4.0
+charters          10 (embedded)
+skills            64 (embedded)
+config            C:\Users\<you>\.pwagent\config.json    OK
+provider          github-copilot-sdk (claude-sonnet-4.5)
+copilot probe     [✓] Copilot SDK reachable (812ms)
+prerequisites
+  required        node (≥22) ✓ · git ✓ · gh ✓ · gh auth ✓ · az ✓ · az pipelines ext ✓ · @axe-core/cli ✓ · kusto CLI ✓
+  recommended     playwright ✓ · playwright browsers ✓
+  optional        VS Code ✓
+features
+  test execution  available
+  ADO triage      available
+  ADO PRs         available
+  GitHub PRs      available
+  GitHub Issues   available
+  a11y verify     available
+  flake finder    available
+  chat wrapper    available
+scheduler         not running    (run: pwagent scheduler start)
+Ready.
+```
+
+## System requirements
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| Node.js | 22.0 (built-in `node:sqlite` required) | 22 LTS |
+| Operating system | Windows 11, macOS 13, Ubuntu 22 | Windows 11 / WSL2 |
+| RAM | 4 GB | 8 GB+ for heavy parallel spawns |
+| Disk | 500 MB for binary + content | 2 GB with browsers installed |
+| Network | Outbound HTTPS to `api.github.com` | Plus ADO / Kusto endpoints |
+| Authentication | GitHub account with active Copilot subscription | Microsoft-internal Copilot license |
+
+## Three layers, independent
+
+After installation you have three things that can each run alone:
+
+- **CLI** — `pwagent run …`, `pwagent agents list`, scheduler sub-commands, etc.
+- **Portal** — `pwagent portal start` (or `npm run dev:portal`) at `127.0.0.1:7337`.
+- **Docs** (this site) — `npm run dev:docs` at `127.0.0.1:7338`.
+
+You can stop any one without affecting the others. The portal reads state files written by the CLI; the docs are static. The scheduler is in-process inside the CLI's `pwagent scheduler start` process.

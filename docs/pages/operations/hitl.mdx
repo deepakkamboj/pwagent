@@ -1,0 +1,101 @@
+---
+title: HITL Review
+---
+
+# HITL Review
+
+**HITL = Human-In-The-Loop.** Some agents (`heal`, `plan`, etc.) refuse to spawn without a human-stamped verdict from a predecessor. `pwagent review` is how you stamp them.
+
+## The queue
+
+When `triage` finishes, it appends a row to `~/.pwagent/review/queue.jsonl`:
+
+```jsonc
+{ "ts": "...", "agent": "triage", "runId": "12345", "verdict": "ProductBug", "confidence": 0.82, "rationale": "...", "artifact": "..." }
+```
+
+`pwagent review` is an interactive loop that walks the queue.
+
+## Running it
+
+```powershell
+pwagent review
+```
+
+Sample session:
+
+```
+HITL queue: 3 unsigned verdicts
+
+[1/3] triage verdict for run 12345
+  verdict: ProductBug   confidence: 0.82
+  rationale: Server returned 400 for a payload the test claims is valid.
+             Likely a real product regression in the order validation path.
+  artifact: ~/.pwagent/runs/12345/trace.zip (open in a separate terminal)
+
+  [p] ProductBug  [t] TestCodeBug  [s] Skip  [o] Inconclusive   stamp> p
+  ✓ stamped. Audit event appended.
+
+[2/3] ...
+```
+
+## The four stamps
+
+| Key | Stamp | Meaning |
+|---|---|---|
+| `p` | ProductBug | Real regression in the app |
+| `t` | TestCodeBug | Test logic / locator / fixture problem |
+| `s` | Skip | Don't make a call now; leave in queue |
+| `o` | Inconclusive / Other | Need more data; mark as such for the audit log |
+
+Stamps emit `review.stamp` events to the audit log:
+
+```jsonc
+{ "ts": "...", "type": "review.stamp", "agent": "triage", "runId": "12345", "stamp": "p", "operator": "dekamb@microsoft.com" }
+```
+
+`heal` reads the audit log for stamps before spawning. Without a `p` or `t` stamp on the triage verdict, heal refuses with:
+
+```
+heal: refusing to spawn — no stamp for triage run 12345
+       (run `pwagent review` to stamp it, or pass --skip-gate)
+```
+
+## Batch mode
+
+For CI or scripted environments:
+
+```bash
+pwagent review --batch < stamps.txt
+```
+
+`stamps.txt` is one stamp per line, matched against the queue in order:
+
+```
+p
+t
+s
+p
+```
+
+Useful for replaying decisions in tests.
+
+## Overriding the gate (don't do this in production)
+
+```bash
+pwagent run heal --skip-gate --from-triage 12345
+```
+
+`--skip-gate` bypasses the stamp check. The `run.start` event records `gateSkipped: true` so audits can spot it.
+
+We expose this for development only. In production / scheduled runs, stamping is mandatory by design — the gate is what keeps the system trustworthy.
+
+## Why HITL at all
+
+Three reasons:
+
+1. **A wrong triage cascades.** If triage says ProductBug and we heal it automatically, a misclassified TestCodeBug leads to product code edits that "fix" a phantom bug.
+2. **Accountability.** Stamps record who said yes. When a fix lands and breaks something, the audit trail names the operator.
+3. **Confidence floor.** Even with confidence 0.95, the *cost* of a wrong stamp on a critical path is too high. A 5-second human check is cheap.
+
+For low-stakes flows (e.g. `report` is HITL-free) we skip the gate. For state-mutating flows (`heal`) we don't.

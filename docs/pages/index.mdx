@@ -1,0 +1,147 @@
+---
+title: pwagent docs
+---
+
+import { Cards, Card } from '../components/Cards';
+import { Features, Feature } from '../components/Features';
+import {
+  Bot, Brain, Plug, BarChart3, Shield, Zap, GitPullRequest,
+  Bug, Eye, Settings, Rocket, BookOpen, Database, Lock,
+  Terminal, Network, CheckCircle, Package, Cpu, FileText,
+  Users, Calendar, Activity, GitBranch, Layers, Workflow,
+} from 'lucide-react';
+
+# pwagent
+
+**Multi-agent Playwright testing — Squad design, GitHub Copilot SDK runtime.**
+
+**`pwagent`** = **`pw`** + **`agent`** — short for **"playwright agent"**, mirroring the `pw` two-letter prefix used by Playwright's own packages.
+
+pwagent is a standalone CLI that ports every design pattern from [Brady Gaster's Squad](https://github.com/bradygaster/squad) — charters, routing, reviewer gates, ceremonies, parallel-by-default — but ships its **own embedded runtime**. One binary, one mental model, one update path. No Copilot CLI host process, no per-session coordinator-manifest token tax.
+
+It runs entirely on **GitHub Copilot via [`@github/copilot-sdk`](https://www.npmjs.com/package/@github/copilot-sdk)** — Microsoft-internal Copilot license powers the model calls; no external API keys.
+
+## Works with everything you already use
+
+pwagent is a **plain Node CLI** — anything that can run a binary can run pwagent. No IDE lock-in, no extension to install.
+
+| Surface | Status | How |
+|---|---|---|
+| Standalone terminal (PowerShell, bash, zsh) | ✓ first-class | `pwagent <cmd>` |
+| Claude Code CLI | ✓ shell-out | Run from inside a Claude Code session — Claude's bash tool invokes it |
+| Claude Code VS Code extension | ✓ shell-out | Extension's integrated terminal runs `pwagent` directly |
+| GitHub Copilot CLI | ✓ shell-out | Copilot CLI's shell can invoke `pwagent` (and vice-versa) — they coexist |
+| GitHub Copilot VS Code extension | ✓ shell-out | Extension's terminal runs `pwagent` like any binary |
+| VS Code, Cursor, Windsurf, JetBrains | ✓ tasks + terminal | `tasks.json` entries or integrated terminal |
+| CI runners (GitHub Actions, ADO Pipelines) | ✓ first-class | Node 22 + `GH_TOKEN` configured |
+
+**Key principle:** pwagent is **not** an IDE plugin or VS Code extension. It's a binary. We keep it that way to avoid lock-in. See [FAQ → Where does pwagent run?](/faq#where-does-pwagent-run-which-ide--tool-integrations) for details.
+
+## Why pwagent?
+
+<Features>
+  <Feature icon={<Bot />} title="10 specialist agents">
+    supervisor · generate · heal · plan · scenario · report · validate · auth · triage · review — each a Markdown charter you can override per workspace
+  </Feature>
+  <Feature icon={<Workflow />} title="Squad design, our runtime">
+    Charters-as-code, routing tables, reviewer gates, ceremonies, parallel-by-default spawn, response mode selection, append-only memory — same filesystem layout, different runtime
+  </Feature>
+  <Feature icon={<Plug />} title="GitHub Copilot SDK">
+    Single auth via `gh auth login`. No API keys, no external SDK. Microsoft-internal license powers Claude Sonnet 4.5 / Haiku 4.5 / Opus
+  </Feature>
+  <Feature icon={<Calendar />} title="In-process scheduler">
+    Same binary, hot-reload jobs, per-job locks, JSONL events, auto-disable on consecutive failures. No separate daemon
+  </Feature>
+  <Feature icon={<BarChart3 />} title="Local Next.js portal">
+    Dashboard at `127.0.0.1:7337` — live SSE log tail, scheduler control, audit viewer, config editor with diff preview
+  </Feature>
+  <Feature icon={<Shield />} title="Loopback-only by default">
+    Per-install bearer secret, HttpOnly session cookie, X-Forwarded-* rejection. `--read-only` flag for view-only deploys
+  </Feature>
+</Features>
+
+## Quick Start
+
+```powershell
+# Install and link the CLI
+cd D:\gith\pwagent
+npm install
+npm run build
+npm link --workspace cli
+
+# Verify prerequisites and authenticate
+pwagent prereqs --install
+pwagent login
+pwagent doctor
+
+# Run an agent
+pwagent run triage --run-id 12345
+
+# Launch the portal
+pwagent portal start            # http://127.0.0.1:7337
+
+# Launch the docs (this site!)
+npm run dev:docs                # http://127.0.0.1:7338
+```
+
+## Documentation map
+
+<Cards cols={3}>
+  <Card icon={<Rocket />} title="Getting Started" href="/getting-started">
+    Install, authenticate, run your first agent
+  </Card>
+  <Card icon={<Network />} title="Architecture" href="/architecture">
+    System layers, override chain, sequence diagrams
+  </Card>
+  <Card icon={<Bot />} title="Agents" href="/agents">
+    All 10 specialists — identity, tools, model
+  </Card>
+  <Card icon={<BookOpen />} title="Skills" href="/skills">
+    60+ skill guides across 7 packs
+  </Card>
+  <Card icon={<Terminal />} title="CLI Reference" href="/cli">
+    Every sub-command, flag, and exit code
+  </Card>
+  <Card icon={<BarChart3 />} title="Portal" href="/portal">
+    Routes, Server Actions, SSE, auth, safety
+  </Card>
+  <Card icon={<Calendar />} title="Scheduler" href="/scheduler">
+    Job specs, tick loop, seed jobs, service install
+  </Card>
+  <Card icon={<Settings />} title="Configuration" href="/configuration">
+    `~/.pwagent/config.json` — zod schema, atomic writes
+  </Card>
+  <Card icon={<Layers />} title="Squad Design" href="/squad">
+    The 11 Squad principles and how pwagent provides each
+  </Card>
+  <Card icon={<Activity />} title="Operations" href="/operations">
+    Audit logs, ralph driver, HITL review, service installer
+  </Card>
+  <Card icon={<GitBranch />} title="Contributing" href="/contributing">
+    Add an agent · author a skill · extend the prereq matrix
+  </Card>
+  <Card icon={<FileText />} title="FAQ" href="/faq">
+    Common questions, troubleshooting, gotchas
+  </Card>
+</Cards>
+
+## Status
+
+| Capability | v0.3 | v0.4 |
+|---|---|---|
+| 10 specialist charters embedded | ✓ | ✓ |
+| 60+ skill guides across 7 packs | ✓ | ✓ |
+| `@github/copilot-sdk` provider adapter | ✓ | ✓ |
+| Scheduler — tick loop, locks, hot-reload | ✓ | ✓ |
+| Audit JSONL stream | ✓ | ✓ |
+| Portal — shell, jobs list, SSE event tail | ✓ | ✓ |
+| `pwagent doctor` live Copilot reachability probe | — | ✓ |
+| Audit viewer with filters + JSON/JSONL export | — | ✓ |
+| Config form editor with diff preview + atomic save | — | ✓ |
+| Bearer auth (per-install secret + HttpOnly cookie) | — | ✓ |
+| Loopback enforcement + `--read-only` mode | — | ✓ |
+| Platform service installer (Task Scheduler / launchd / systemd) | — | ✓ |
+
+---
+
+**v0.4 is feature-complete.** See [Status & Roadmap](/operations#status-and-roadmap) for what shipped where.

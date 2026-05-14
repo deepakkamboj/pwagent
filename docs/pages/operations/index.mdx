@@ -1,0 +1,77 @@
+---
+title: Operations
+---
+
+import { Cards, Card } from '../../components/Cards';
+import { Activity, ClipboardCheck, RefreshCw, Settings, Wrench } from 'lucide-react';
+
+# Operations
+
+How you keep pwagent running unattended and inspect what it did.
+
+<Cards cols={2}>
+  <Card icon={<Activity />} title="Audit Log" href="/operations/audit">
+    `~/.pwagent/audit/events.jsonl` — append-only, filterable, exportable
+  </Card>
+  <Card icon={<ClipboardCheck />} title="HITL Review" href="/operations/hitl">
+    `pwagent review` — stamp triage verdicts; the gate before `heal`
+  </Card>
+  <Card icon={<RefreshCw />} title="Ralph — In-session Driver" href="/operations/ralph">
+    `pwagent ralph go` — the in-session loop that keeps the supervisor active
+  </Card>
+  <Card icon={<Settings />} title="Service Installer" href="/operations/service">
+    `pwagent service install` — Task Scheduler / launchd / systemd
+  </Card>
+  <Card icon={<Wrench />} title="Troubleshooting" href="/operations/troubleshooting">
+    Common errors with concrete fixes
+  </Card>
+</Cards>
+
+## Status & roadmap
+
+### v0.3 — current
+
+| Capability | Status |
+|---|---|
+| npm workspaces monorepo — single `npm install` covers `cli/` + `portal/` | ✓ |
+| Simplified roster — 10 specialist agents | ✓ |
+| Skill packs reorganized — `kusto/SKILL.md`, `ado/SKILL.md`, `a11y/SKILL.md` | ✓ |
+| Workspace override priority — `.pwagent/` preferred, `.squad/` fallback | ✓ |
+| Squad SKILL.md shape recognized | ✓ |
+| Sample config — `pwagent.config.example.json` at repo root | ✓ |
+| CLI entrypoint, sub-commands | ✓ |
+| Embedded 10 charters + 60+ skill guides across 7 packs | ✓ |
+| Master prompt + routing.md / ceremonies.md / team.md embedded | ✓ |
+| Charter / skill loaders with workspace > user > embedded override chain | ✓ |
+| Prereqs matrix, detection, interactive install | ✓ |
+| `gh login` / `whoami` / `logout` + `gh-login` installer kind | ✓ |
+| Config CRUD with zod validation + atomic writes | ✓ |
+| Coordinator runtime: charter loading, model selection, tool allowlist, skill-aware injection | ✓ |
+| Tool sandbox: read, write, edit, bash (allowlisted), grep (rg-aware) | ✓ |
+| `@github/copilot-sdk` provider adapter (streaming, tool loop, idle timeout) | ✓ |
+| Scheduler: tick loop, locks, hot-reload, retry, auto-disable, JSONL events, 4 seed jobs | ✓ |
+| Audit: JSONL append, `audit tail`, `audit export` with filters | ✓ |
+| `pwagent review` HITL stamp loop with persistent queue | ✓ |
+| `pwagent ralph` in-session driver | ✓ |
+| `pwagent portal start` launcher for Next.js dashboard | ✓ |
+| Portal: shell (header, footer, collapsible sidebar with shadcn/ui) | ✓ |
+| Portal: live `/api/jobs`, `/api/jobs/[id]`, `/api/events/jobs/[id]` (SSE) | ✓ |
+| Portal: Server Actions — enable/disable, fire-now | ✓ |
+| Portal: live jobs list + job-detail page with real-time event tail | ✓ |
+| Portal: Playwright CLI page | ✓ |
+| 64+ vitest tests | ✓ |
+
+### v0.4 — what just landed
+
+| Capability | Status |
+|---|---|
+| **R4** — `pwagent doctor` live Copilot reachability probe with categorised failures | ✓ |
+| **Doctor clean-exit** — probe cleanup + `process.exit` so shell prompt returns immediately | ✓ |
+| **Detector resilience** — trust version regex over non-zero exit | ✓ |
+| **PT4 audit** — `/audit` filterable viewer + JSON/JSONL export via `/api/audit/export` | ✓ |
+| **PT4 config** — `/config` form editor with diff preview, atomic write | ✓ |
+| **PT5 bearer auth** — per-install secret at `~/.pwagent/portal/secret` (chmod 600) + HttpOnly session cookie | ✓ |
+| **PT5 loopback** — `portal/middleware.ts` rejects non-loopback hosts + X-Forwarded-* headers | ✓ |
+| **PT5 `--read-only`** — Server Actions short-circuit; banner shown | ✓ |
+| **PT5 service installers** — Task Scheduler / launchd / systemd | ✓ |
+| **Docs site** (this) — `@pwagent/docs` Nextra workspace at port 7338 + portal Help link | ✓ |

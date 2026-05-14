@@ -1,0 +1,169 @@
+---
+title: Configuration
+---
+
+import { EnvTable } from '../components/EnvTable';
+
+# Configuration
+
+The user config lives at `~/.pwagent/config.json`. It's validated by [zod](https://zod.dev/) on every read; bad shapes refuse to load.
+
+## Full schema
+
+```jsonc
+{
+  "schema": 1,
+
+  "providers": {
+    "copilot": {
+      "model": "claude-sonnet-4.5",
+      "idleTimeoutMs": 300000,
+      "toolTimeoutMs": 120000,
+      "toolOutputMaxKb": 200
+    }
+  },
+
+  "perAgent": {
+    "triage":   { "model": "claude-sonnet-4.5" },
+    "heal":     { "model": "claude-sonnet-4.5" },
+    "generate": { "model": "claude-sonnet-4.5" },
+    "validate": { "model": "claude-haiku-4-5" },
+    "report":   { "model": "claude-haiku-4-5" }
+  },
+
+  "ado": {
+    "organization": "contoso",
+    "project": "Engineering",
+    "defaultRepository": "playwright-tests"
+  },
+
+  "github": {
+    "defaultRepository": "microsoft/playwright-tests"
+  },
+
+  "scheduler": {
+    "enabled": false,
+    "maxConcurrent": 4
+  },
+
+  "portal": {
+    "port": 7337,
+    "bindAll": false,
+    "readOnly": false,
+    "helpUrl": null
+  },
+
+  "docs": {
+    "port": 7338,
+    "url": null
+  },
+
+  "casting": {
+    "enabled": false
+  },
+
+  "responseMode": {
+    "max": "full"
+  },
+
+  "notifications": {
+    "report": {
+      "webhookUrl": null,
+      "format": "markdown"
+    }
+  },
+
+  "audit": {
+    "retentionDays": 90,
+    "rotateAtMb": 50
+  }
+}
+```
+
+## Editing
+
+Three paths:
+
+### CLI
+
+```powershell
+pwagent config view
+pwagent config get providers.copilot.model
+pwagent config set providers.copilot.model claude-haiku-4-5
+pwagent config path                           # print the file path
+```
+
+### Portal
+
+Open `http://127.0.0.1:7337/config`. The portal renders the config as a form with per-field zod validation. The **diff preview** shows exactly what changes before you save. Save writes atomically (`tmp` + rename).
+
+### Hand-edit
+
+```powershell
+notepad "$env:USERPROFILE\.pwagent\config.json"
+```
+
+Bad JSON or schema violations cause the next `pwagent` command to exit with a structured error. The config is **not** silently reset — you fix it or revert.
+
+## Atomic writes
+
+Every config write follows the same pattern:
+
+1. Read current config
+2. Apply change (CLI sets one field; portal applies a full new object)
+3. Validate with zod
+4. Write to `~/.pwagent/config.json.tmp`
+5. `fs.rename` over `~/.pwagent/config.json`
+
+Step 5 is atomic on every supported OS — even if pwagent crashes mid-step, you either have the old file or the new file, never a half-written one.
+
+## Environment variables
+
+These override config fields at runtime (CLI flags > env > config > default):
+
+<EnvTable
+  vars={[
+    { name: 'PWAGENT_HOME', description: 'Override `~/.pwagent`', default: '~/.pwagent' },
+    { name: 'PWAGENT_CONFIG', description: 'Override config file path', default: '$PWAGENT_HOME/config.json' },
+    { name: 'PWAGENT_PORTAL_PORT', description: 'Portal listen port', default: '7337' },
+    { name: 'PWAGENT_PORTAL_HOST', description: 'Portal bind host', default: '127.0.0.1' },
+    { name: 'PWAGENT_PORTAL_BIND_ALL', description: 'Disable loopback guard', default: '0' },
+    { name: 'PWAGENT_PORTAL_READ_ONLY', description: 'Disable Server Actions', default: '0' },
+    { name: 'PWAGENT_PORTAL_HIDE_HELP', description: 'Hide the Help sidebar entry', default: '0' },
+    { name: 'PWAGENT_DOCS_PORT', description: 'Docs site listen port', default: '7338' },
+    { name: 'PWAGENT_DOCS_URL', description: 'External docs URL (overrides local link)', default: '(unset)' },
+    { name: 'PWAGENT_MODEL', description: 'Default model id', default: 'claude-sonnet-4.5' },
+    { name: 'PWAGENT_RESPONSE_MODE', description: 'Force a response mode for every run', default: '(inferred)' },
+    { name: 'PWAGENT_NO_COLOR', description: 'Disable ANSI colour output', default: '0' },
+    { name: 'GH_TOKEN', description: 'GitHub token; read by `gh` and the Copilot SDK', required: true },
+  ]}
+/>
+
+## Sensitive fields
+
+The CLI redacts sensitive fields when printing:
+
+```
+$ pwagent config view
+{
+  "notifications": {
+    "report": {
+      "webhookUrl": "<redacted>"
+    }
+  }
+}
+```
+
+Add field names to `audit.redactKeys` to extend redaction:
+
+```jsonc
+{
+  "audit": {
+    "redactKeys": ["webhookUrl", "internalToken"]
+  }
+}
+```
+
+## Migration
+
+When the schema bumps, pwagent reads the old config, applies the migration, writes the new one, and bumps `schema:`. Migrations live in `cli/src/config/migrations/` and run in order. **No manual migration needed.**

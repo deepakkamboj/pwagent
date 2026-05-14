@@ -1,0 +1,86 @@
+---
+title: Charter / Skill Override Chain
+---
+
+# Charter / Skill Override Chain
+
+Every charter and every skill resolves through the same four-step priority chain. Later wins.
+
+```
+1. embedded   →  <dist>/content/agents/<name>/charter.md       (shipped in the binary)
+2. user       →  ~/.pwagent/agents/<name>.md                    (per-machine override)
+3. workspace  →  <cwd>/.squad/agents/<name>/charter.md          (Squad-scaffolded — fallback)
+4. workspace  →  <cwd>/.pwagent/agents/<name>/charter.md        (preferred convention — wins)
+```
+
+Loaders: [`cli/src/charters/loader.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/charters/loader.ts) and [`cli/src/skills/loader.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/skills/loader.ts).
+
+## Why the order matters
+
+| Layer | Audience | Lifetime | Source-controlled? |
+|---|---|---|---|
+| **embedded** | Everyone, zero-config | Tied to the binary version | Yes — in the repo |
+| **user** | One developer, all repos | Until they delete `~/.pwagent/agents/` | No — local only |
+| **workspace `.squad/`** | A repo scaffolded by `npx squad init` | Until the team rewrites it | Yes — in their repo |
+| **workspace `.pwagent/`** | A repo that prefers our convention | Until the team rewrites it | Yes — in their repo |
+
+`.squad/` and `.pwagent/` can co-exist; `.pwagent/` wins. This makes pwagent **fully compatible** with workspaces scaffolded by `npx @bradygaster/squad-cli init` while preferring our convention when teams build their own.
+
+## Inspecting what loaded
+
+```powershell
+pwagent agents show triage              # renders the resolved charter
+pwagent agents show triage --source     # also prints which layer won
+```
+
+Sample `--source` output:
+
+```
+charter: triage
+source : workspace (.pwagent/agents/triage/charter.md)
+chain  :
+  ✓ embedded   <dist>/content/agents/triage/charter.md          (loaded)
+  ✓ user       ~/.pwagent/agents/triage.md                       (loaded, replaces)
+  ✓ workspace  .squad/agents/triage/charter.md                   (loaded, replaces)
+  ✓ workspace  .pwagent/agents/triage/charter.md                 (loaded, replaces — WINS)
+```
+
+## Frontmatter is replaced, not merged
+
+When a higher-priority layer matches, the entire file replaces lower layers. Frontmatter is **not** deep-merged. This is deliberate: it keeps the resolved charter unambiguous and grep-able.
+
+If you want to extend rather than replace, **copy the embedded charter first**:
+
+```powershell
+mkdir .pwagent\agents\triage
+pwagent agents show triage --raw > .pwagent\agents\triage\charter.md
+notepad .pwagent\agents\triage\charter.md
+```
+
+## Skills follow the same rules
+
+Pack-namespaced (e.g. `core/locators`) and Squad-shape (e.g. `kusto/SKILL.md`) skills both resolve through the same chain. The pack is the first path segment; the skill name is the second.
+
+```
+1. embedded   →  <dist>/content/skills/core/locators.md
+2. user       →  ~/.pwagent/skills/core/locators.md
+3. workspace  →  <cwd>/.squad/skills/core/locators.md
+4. workspace  →  <cwd>/.pwagent/skills/core/locators.md
+```
+
+For Squad-shape skills:
+
+```
+1. embedded   →  <dist>/content/skills/kusto/SKILL.md
+2. user       →  ~/.pwagent/skills/kusto/SKILL.md
+3. workspace  →  <cwd>/.squad/skills/kusto/SKILL.md
+4. workspace  →  <cwd>/.pwagent/skills/kusto/SKILL.md
+```
+
+## Common pitfalls
+
+| Pitfall | What goes wrong | Fix |
+|---|---|---|
+| Authoring at `~/.pwagent/agents/triage.md` (flat file) and `~/.pwagent/agents/triage/charter.md` (folder) | Flat-file shape is user-layer; folder shape is workspace-layer. Both ignored if you cross them | Pick one. Flat for user, folder for workspace |
+| Forgetting that `.pwagent/` wins over `.squad/` | A `.squad/` scaffolded charter looks "unused" when both exist | Delete the `.squad/` copy or move into `.pwagent/` |
+| Editing `cli/dist/content/...` directly | Wiped on the next `npm run build:cli` | Edit `cli/src/content/...` (the build copies it forward) |

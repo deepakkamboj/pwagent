@@ -1,0 +1,71 @@
+---
+title: Prerequisites
+---
+
+# Prerequisites
+
+pwagent is a coordinator — most heavy lifting happens through other CLIs it shells out to. The `pwagent prereqs` command detects, reports, and (with `--install`) installs the missing ones.
+
+## The matrix
+
+| Tier | Prereq | Why pwagent needs it | Auto-install |
+|---|---|---|---|
+| **required** | `node` (≥22) | Runtime for the binary itself | manual (`nvm install 22` / `winget install OpenJS.NodeJS.LTS`) |
+| required | `git` | Repo ops, patches, branching, PR prep | winget / brew / apt / dnf / pacman |
+| required | `gh` | Copilot SDK auth. Also: PR creation, Issues, repo discovery | winget / brew / apt |
+| required | **`gh auth` (logged in)** | Copilot subscription must be active | runs `gh auth login --web` |
+| required | `az` | ADO triage + PR creation; Kusto auth | winget / brew / apt |
+| required | `az pipelines` extension | Pipeline run details for triage | `az extension add --name azure-devops` |
+| required | `@axe-core/cli` | Accessibility scans (a11y verifier) | `npm i -g @axe-core/cli` |
+| required | kusto CLI | `kusto` skill, flake history | manual ([aka.ms/kustofree](https://aka.ms/kustofree)) |
+| **recommended** | `@playwright/test` | validator / fixer / author | `npm i -g @playwright/test` |
+| recommended | Playwright browsers | headless Chromium / Firefox / WebKit | `npx playwright install` |
+| **optional** | VS Code | Only needed for the `@pwagent` chat wrapper | winget / brew |
+
+## Reporting only
+
+```powershell
+pwagent prereqs                       # report; no network changes
+```
+
+Reads `which` / `--version` for each entry. Returns exit 0 if everything required is present, 1 otherwise.
+
+## Installing missing ones
+
+```powershell
+pwagent prereqs --install             # interactive — prompts before each install
+pwagent prereqs --install --yes       # non-interactive, accept all
+pwagent prereqs --install --include-optional --yes
+pwagent prereqs --install --skip "azure-cli,kusto-cli"
+```
+
+## Platform detection
+
+| Platform | Detected by | Falls back to |
+|---|---|---|
+| Windows | `winget --version` → `winget install` | manual link |
+| macOS | `brew --version` → `brew install` | manual link |
+| Debian/Ubuntu | `apt -v` + sudo available → `sudo apt install` | manual link |
+| Fedora/RHEL | `dnf --version` + sudo available → `sudo dnf install` | manual link |
+| Arch | `pacman --version` + sudo available → `sudo pacman -S` | manual link |
+| Node globals | always `npm install -g` | n/a |
+| gh extensions | always `gh extension install` | n/a |
+
+## Safety rules
+
+- **No silent installs.** Default is report-only. `--install` requires the flag.
+- **No sudo without explicit consent.** Linux installs show the exact `sudo` line and wait for confirmation.
+- **Network-only when needed.** Report mode makes no network calls — only `which` / `--version` probes.
+
+## Extending the matrix
+
+Edit [`cli/src/prereqs/matrix.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/prereqs/matrix.ts) — append a `Prereq` object with `id`, `label`, `reason`, `tier`, `detect`, `installers`, `unlocks`. The vitest suite in [`cli/tests/prereqs.test.ts`](https://github.com/microsoft/pwagent/blob/main/cli/tests/prereqs.test.ts) catches incomplete shapes.
+
+## Common issues
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `gh auth (logged in)` reports ✗ even after `gh auth login` | Token doesn't include `read:user` scope | `gh auth refresh -s read:user` |
+| `kusto CLI` reports ✗ but `kusto.cli` is on PATH | Detector uses `kusto` not `kusto.cli` | Symlink or add `kusto.cli` to PATH as `kusto` |
+| `@axe-core/cli` reports ✗ after `npm i -g @axe-core/cli` | npm prefix differs from PATH | `npm config get prefix` and add `<prefix>` to PATH |
+| `npx playwright --version` non-zero exit | Deprecation shim returns 1 | pwagent trusts the version regex over the exit code — auto-recovered |

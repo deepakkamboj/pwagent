@@ -1,0 +1,79 @@
+---
+title: Read-only Mode
+---
+
+# Read-only Mode
+
+Sometimes you want the portal **for viewing only**. Examples:
+
+- A team-room kiosk that shows the dashboard 24×7
+- A CI build agent that needs to render `/audit` for an artifact upload
+- A screen-share / demo where a stray click could disable a critical job
+- A team member who's auditing the system without write permission
+
+For those, start the portal with `--read-only`.
+
+## Starting it
+
+```bash
+pwagent portal start --read-only
+```
+
+Equivalent to:
+
+```bash
+PWAGENT_PORTAL_READ_ONLY=1 pwagent portal start
+```
+
+## What's disabled
+
+Every Server Action short-circuits at the top:
+
+```ts
+if (process.env.PWAGENT_PORTAL_READ_ONLY === '1') {
+  throw new Error('read-only mode');
+}
+```
+
+The UI also disables every form's submit button and shows a banner:
+
+```
+⚠ Read-only mode — mutations are disabled. To enable, restart without --read-only.
+```
+
+| UI element | Behaviour |
+|---|---|
+| Job enable / disable toggle | greyed out, click does nothing |
+| Job "fire now" button | hidden |
+| Config form Save button | greyed out |
+| New-job form | hidden |
+| Audit export download | **still works** (GET, not a mutation) |
+| Live SSE event tail | **still works** (no mutation) |
+
+## What's still allowed
+
+| Endpoint | Read-only? |
+|---|---|
+| All GET routes (`/`, `/jobs`, `/agents`, etc.) | yes |
+| All `/api/*` GET handlers | yes |
+| SSE streams (`/api/events/jobs/<id>`) | yes |
+| `/api/audit/export` | yes |
+| Server Actions | **NO** |
+
+## Why a separate flag instead of "log out"
+
+A logged-out user can't mutate anyway. The point of `--read-only` is to:
+
+1. **Hide the UI affordances** — so demos don't show greyed-out buttons.
+2. **Refuse mutations even with a valid session** — so a forgotten cookie doesn't accidentally fire a button click.
+3. **Make the mode visible** — banner on every page.
+
+It's a defense-in-depth layer for the operator, not a permission system for users.
+
+## Combining with `--bind-all`
+
+```bash
+pwagent portal start --bind-all --read-only
+```
+
+Safe pattern for **public dashboards behind a trusted proxy**: anyone on the team network can see the audit log, no one can change anything.

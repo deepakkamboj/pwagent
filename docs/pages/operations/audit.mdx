@@ -1,0 +1,92 @@
+---
+title: Audit Log
+---
+
+# Audit Log
+
+`~/.pwagent/audit/events.jsonl` is the **single source of truth** for what pwagent did. Every run, every tool invocation, every stamp, every scheduler tick is one append-only line.
+
+## Lifecycle vocabulary
+
+Fixed set, in [`cli/src/audit/types.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/audit/types.ts):
+
+| Type | When |
+|---|---|
+| `run.start` | A `pwagent run <agent>` begins |
+| `run.complete` | The run finished successfully |
+| `run.error` | The run errored or timed out |
+| `tool.invoke` | A tool call completed |
+| `tool.error` | A tool call errored or was refused |
+| `review.stamp` | A human stamped an HITL queue entry |
+| `scheduler.start` | The scheduler tick loop started |
+| `scheduler.stop` | The scheduler tick loop stopped |
+
+Each event has at least `ts` (ISO 8601), `type`, and `agent`.
+
+## Sample events
+
+```jsonc
+{ "ts": "2026-05-13T14:00:00.123Z", "type": "scheduler.start", "pid": 18472 }
+{ "ts": "2026-05-13T14:00:05.001Z", "type": "run.start",    "agent": "triage", "mode": "standard", "model": "claude-sonnet-4.5", "runId": "12345" }
+{ "ts": "2026-05-13T14:00:07.842Z", "type": "tool.invoke",  "agent": "triage", "tool": "read",  "path": "tests/login.spec.ts", "durationMs": 12 }
+{ "ts": "2026-05-13T14:00:09.218Z", "type": "tool.invoke",  "agent": "triage", "tool": "bash",  "cmd": "npx playwright show-trace ...", "exitCode": 0, "durationMs": 1376 }
+{ "ts": "2026-05-13T14:00:18.412Z", "type": "run.complete", "agent": "triage", "exitCode": 0, "durationMs": 13411, "verdict": "ProductBug", "confidence": 0.82 }
+{ "ts": "2026-05-13T14:02:01.000Z", "type": "review.stamp", "agent": "triage", "runId": "12345", "stamp": "p", "operator": "dekamb@microsoft.com" }
+```
+
+## Inspecting from the CLI
+
+```bash
+pwagent audit tail                            # last 20 events, follow mode
+pwagent audit tail -n 100
+pwagent audit export --since 7d
+pwagent audit export --type tool.error --since 30d
+pwagent audit export --agent heal --format json -o heal-history.json
+pwagent audit export --agent triage --since 7d --format table
+```
+
+`audit export` filters and re-emits matching events. Supported filters:
+
+| Flag | Example | Meaning |
+|---|---|---|
+| `--since` | `7d`, `48h`, `2026-05-01` | Relative or absolute lower bound |
+| `--until` | `2026-05-13` | Upper bound |
+| `--type` | `run.error` | One event type |
+| `--agent` | `heal` | Events emitted by one agent |
+| `--format` | `jsonl`, `json`, `table` | Output shape |
+| `-o` | `out.json` | Write to file instead of stdout |
+
+## Inspecting from the portal
+
+Open `http://127.0.0.1:7337/audit`. The viewer:
+
+- Lists the last 1000 events server-side, paginated
+- Filters by type, agent, time window, free-text
+- Streams live new events via SSE
+- Exports the current filtered view as `.json` or `.jsonl` via `/api/audit/export`
+
+## Retention
+
+By default the file grows forever. Two config knobs:
+
+```jsonc
+{
+  "audit": {
+    "retentionDays": 90,
+    "rotateAtMb": 50
+  }
+}
+```
+
+When the file exceeds `rotateAtMb`, pwagent rotates:
+
+- Current → `events.jsonl.2026-05-13`
+- New `events.jsonl` opens fresh
+
+When a rotated file is older than `retentionDays`, it's deleted on the next scheduler tick.
+
+## Append-only enforcement
+
+The audit writer **never rewrites** `events.jsonl`. Even compaction (rotation) is implemented as a rename of the old file, not an edit. This is invariant #15.
+
+Why: any compliance / legal review wants to see the *full unedited history*. A rotated file is still on disk; a deleted one is gone but the rotation event is recorded in the *next* file. There's no scenario where audit history silently disappears.

@@ -1,0 +1,170 @@
+---
+title: CLI Reference
+---
+
+# CLI Reference
+
+The complete command set, organised by what you're trying to do.
+
+## Bootstrap
+
+```bash
+pwagent init [--yes]
+pwagent login | logout | whoami
+pwagent doctor [--fix] [--no-probe] [--probe-timeout <ms>]
+pwagent prereqs [--install] [--include-optional] [--skip <ids>] [--yes] [--dry-run]
+```
+
+| Command | Purpose |
+|---|---|
+| `init` | Write `~/.pwagent/config.json` interactively |
+| `login` | Wraps `gh auth login --web --scopes read:user` |
+| `whoami` | Print GitHub login + Copilot subscription status |
+| `logout` | Wraps `gh auth logout` |
+| `doctor` | Composed prereq + config + provider + features view. **Exit 0** when ready; non-zero otherwise |
+| `doctor --fix` | Alias for `prereqs --install --yes` then re-verify |
+| `prereqs` | Detect-only report |
+| `prereqs --install` | Interactive install of missing required + recommended prereqs |
+
+## Inspection
+
+```bash
+pwagent agents list
+pwagent agents show <name> [--raw] [--source]
+pwagent agents add <path>
+pwagent skills list [--pack <pack>]
+pwagent skills show <pack>/<name>
+```
+
+| Command | Purpose |
+|---|---|
+| `agents list` | One line per agent: name + description |
+| `agents show <name>` | Render the resolved charter (markdown) |
+| `agents show <name> --source` | Print which override layer won |
+| `agents show <name> --raw` | Skip frontmatter rendering |
+| `agents add <path>` | Copy a custom charter into `.pwagent/agents/<name>/charter.md` |
+
+## Config + model
+
+```bash
+pwagent config view
+pwagent config get <path>
+pwagent config set <path> <val>
+pwagent config path
+
+pwagent model list
+pwagent model show
+pwagent model set <id> [--agent <agent>]
+pwagent model reset
+```
+
+`<path>` uses zod-friendly dot syntax: `providers.copilot.model`, `perAgent.triage.model`, `notifications.report.webhookUrl`.
+
+## Runtime
+
+```bash
+pwagent run <agent> [prompt...] [--model <id>] [--mode direct|light|standard|full] [--cwd <path>] [--dry-run] [--json]
+pwagent review [--batch]
+pwagent ralph go | status | stop
+```
+
+### `pwagent run` flags
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--model <id>` | charter's `## Model` | Per-invocation override |
+| `--mode <m>` | inferred | One of `direct`, `light`, `standard`, `full` |
+| `--cwd <path>` | `process.cwd()` | Where workspace overrides resolve from |
+| `--dry-run` | off | Resolve charter + skills + tools, print system message, **do not** call SDK |
+| `--json` | off | Stream JSON events instead of markdown |
+| `--skills <list>` | inferred | Comma-separated override of skill-aware injection |
+| `--tool-timeout-s <n>` | 120 | Per-tool timeout |
+| `--idle-timeout-s <n>` | mode-default | SDK session idle timeout |
+
+### `pwagent ralph`
+
+Squad's "Ralph" — the in-session loop that keeps the supervisor active.
+
+```bash
+pwagent ralph go              # start the in-session driver
+pwagent ralph status          # is it running?
+pwagent ralph stop            # gracefully stop
+```
+
+## Scheduler
+
+```bash
+pwagent scheduler start [--daemon]
+pwagent scheduler stop
+pwagent scheduler list
+pwagent scheduler status [<id>] [-n <limit>]
+pwagent scheduler dry-run <id> [--execute]
+
+pwagent job add <path>
+pwagent job enable <id>
+pwagent job disable <id>
+pwagent job logs <id> [-n <limit>]
+```
+
+| Command | Purpose |
+|---|---|
+| `scheduler start` | Foreground tick loop |
+| `scheduler start --daemon` | Detached (POSIX) / Task Scheduler (Windows) |
+| `scheduler dry-run <id>` | Simulate the next tick for one job without executing |
+| `scheduler dry-run <id> --execute` | Run the job once now, regardless of schedule |
+| `job add <path>` | Copy a JSON spec into `~/.pwagent/scheduler/` |
+
+## Portal
+
+```bash
+pwagent portal start [--dev] [--port <n>] [--read-only] [--bind-all]
+pwagent portal status [--port <n>]
+```
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--dev` | off | `next dev` instead of `next start` |
+| `--port` | 7337 | Override |
+| `--read-only` | off | Disable all Server Actions; show banner |
+| `--bind-all` | off | Bind 0.0.0.0; **only with a trusted reverse proxy** |
+
+## Audit
+
+```bash
+pwagent audit tail [-n <limit>]
+pwagent audit export [--since 7d] [--type <t>] [--agent <a>] [--format jsonl|json|table] [-o <file>]
+```
+
+## Service install
+
+```bash
+pwagent service install
+pwagent service uninstall
+pwagent service status
+```
+
+Registers `pwagent scheduler start` with the OS service manager — Task Scheduler / launchd / systemd. See [Operations → Service Installer](/operations/service).
+
+## Global flags
+
+These work on every sub-command:
+
+| Flag | Purpose |
+|---|---|
+| `--help` | Print help and exit |
+| `--version` | Print version and exit |
+| `--cwd <path>` | Override the working directory |
+| `--config <path>` | Override the config file path |
+| `--no-color` | Disable ANSI colour output |
+| `--verbose` | Extra debug logging to stderr |
+| `--quiet` | Suppress non-error output |
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | General error (failed run, doctor not ready, etc.) |
+| 2 | CLI usage error (bad flag, unknown command) |
+| 124 | Tool timeout (matches `timeout(1)` convention) |
+| 130 | Interrupted by `^C` |

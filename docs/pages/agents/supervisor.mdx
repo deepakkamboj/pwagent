@@ -1,0 +1,60 @@
+---
+title: Supervisor
+---
+
+# Supervisor
+
+The **supervisor** is the top-level router. It is the default agent when you run `pwagent` with no `<agent>` argument (or via `pwagent ralph go`).
+
+## Identity
+
+- **Role:** Top-level router
+- **Project:** pwagent
+- **Default mode:** Direct or Standard (depending on whether the user turn is a question vs. a task)
+
+## Responsibilities
+
+- Read the user's free-text request
+- Consult `routing.md` to pick the right specialist
+- Check any required reviewer stamps before delegating
+- Spawn the chosen specialist with a clean prompt
+- Forward streamed output back to the user
+- Append a `route.decision` event to the audit log
+
+## Boundaries
+
+- The supervisor does **not** run tools itself. It only delegates.
+- The supervisor does **not** override a specialist's verdict — if `triage` returns ProductBug, supervisor doesn't second-guess it.
+- The supervisor does **not** chain agents (e.g. triage → heal → validate) without explicit ceremony permission.
+
+## Tools
+
+The supervisor needs almost nothing:
+
+- `read` — to inspect `routing.md` and `ceremonies.md`
+- `bash` — for `pwagent agents list` introspection
+
+## Model
+
+- Preferred: `claude-sonnet-4.5`
+- Acceptable fallback: `claude-haiku-4-5`
+
+## How it picks the route
+
+The decision walks `routing.md` top-to-bottom. The first matching row wins. If nothing matches, the supervisor:
+
+1. Asks the user to clarify (in Direct mode), OR
+2. Picks the closest match by skill-aware scoring across all specialist `description:` frontmatters, OR
+3. Refuses and explains why (e.g. "I don't know how to handle 'deploy production'")
+
+## Invoking it
+
+```powershell
+pwagent run "fix the flaky login test"     # supervisor will route to triage → heal
+pwagent run                                  # supervisor will ask what you need
+pwagent ralph go                             # supervisor in continuous mode
+```
+
+## Source
+
+[`cli/src/content/agents/supervisor/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/supervisor/charter.md)

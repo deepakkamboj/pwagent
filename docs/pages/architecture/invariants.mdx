@@ -1,0 +1,44 @@
+---
+title: Invariants
+---
+
+# Invariants
+
+These rules are enforced by the runtime, not just convention. Violating one is a bug.
+
+| # | Invariant | Enforced by |
+|---|---|---|
+| 1 | All charters and skills load through the **four-step override chain** in exact order | `cli/src/charters/loader.ts`, `cli/src/skills/loader.ts` |
+| 2 | Every `pwagent run` writes at least one `run.start` and one `run.complete` / `run.error` audit event | `cli/src/audit/` |
+| 3 | The bash tool refuses any first-token not on the **binary allowlist** | `cli/src/runtime/tools/bashAllowlist.ts` |
+| 4 | All reads / writes / edits resolve to **inside `cwd` or `~/.pwagent/`** | `cli/src/runtime/tools/pathGuard.ts` |
+| 5 | The **scheduler tick is single-threaded per process** — per-job locks prevent re-entry | `cli/src/scheduler/lock.ts` |
+| 6 | Job spec hot-reload is **atomic** — write tmp + rename, never partial-update in place | `cli/src/scheduler/jobLoader.ts` |
+| 7 | `config.json` writes are **atomic** — tmp + rename, fail-closed on parse error | `cli/src/config/loader.ts` |
+| 8 | The portal **refuses non-loopback hosts** and **rejects `X-Forwarded-*` headers** unless `--bind-all` is set | `portal/middleware.ts` |
+| 9 | Every portal Server Action calls `requireWriteAuth()`; **no Server Action mutates state without auth** | `portal/lib/auth.ts` |
+| 10 | The portal **secret file is chmod 600 / ACL-locked** on creation | `portal/lib/secret.ts` |
+| 11 | Reviewer-gated agents (e.g. `heal`) **refuse to spawn** without a stamped predecessor (e.g. triage) | `cli/src/runtime/coordinator.ts` |
+| 12 | The 74 KB upstream `squad.agent.md` is **never sent to the SDK** — it lives in the repo for reference only | `cli/src/runtime/coordinator.ts` |
+| 13 | `pwagent doctor` returns **exit 0 only when every required prereq is OK and the SDK probe succeeds** | `cli/src/cli/doctor.ts` |
+| 14 | Tool output is **capped at 200 KB per call** and **timed out at 120 s** unless overridden | `cli/src/runtime/tools/runner.ts` |
+| 15 | Audit events are **append-only** — pwagent never rewrites `~/.pwagent/audit/events.jsonl` | `cli/src/audit/writer.ts` |
+| 16 | Scheduler events are **JSONL one event per line** — no multi-line JSON, no surrounding array | `cli/src/scheduler/events.ts` |
+
+## Why we publish these
+
+Two reasons:
+
+1. **You can audit them.** Every invariant has a file path. Open the file and read the test that locks it down.
+2. **You can extend them.** If you fork the runtime, knowing the contract lets you keep what matters.
+
+## What's *not* an invariant
+
+These are conventions but not enforced — break them and the runtime keeps working:
+
+- Charter naming (`triage.md` vs `triage/charter.md`)
+- Skill pack organisation (`core/locators.md` vs `core/locators/SKILL.md`)
+- The four ceremonies (`weekly`, `coverage-nightly`, etc.) — you can add your own
+- The `agent_start` / `agent_end` / `agent_error` event names — the portal renders whatever it finds
+
+If you want one of these promoted to a hard rule, add a test that locks it down and submit a PR.

@@ -1,0 +1,66 @@
+---
+title: Triage
+---
+
+# Triage
+
+The **triage** agent classifies a Playwright failure into one of four verdicts.
+
+## Identity
+
+- **Role:** Failure triage
+- **Project:** pwagent
+- **Default mode:** Standard
+
+## Verdicts
+
+| Verdict | Meaning | Next step |
+|---|---|---|
+| **ProductBug** | A real regression in the application code | Route to `heal` (after HITL stamp) |
+| **TestCodeBug** | Test logic / locator / fixture problem | Route to `heal` (after HITL stamp) |
+| **Environment** | Infra, network, missing dependency, browser binary | Investigate manually; no agent fix |
+| **Inconclusive** | Trace insufficient or contradictory; needs more data | Re-run with `--trace on --video on` |
+
+Each verdict comes with a **confidence** in `[0, 1]` and a brief rationale.
+
+## Responsibilities
+
+- Read the failure artifact (`failures.json` row, `trace.zip`, screenshot, console log)
+- Cross-reference recent history via `core/flaky-tests` skill if applicable
+- If ADO is wired up: pull the build's `runs/<id>/logs` for full output
+- Emit verdict + confidence + 1–3 sentence rationale
+- Append the verdict to an HITL queue at `~/.pwagent/review/queue.jsonl` for stamping
+
+## Boundaries
+
+- Triage does **not** patch code. That's `heal`.
+- Triage does **not** re-run the failing test. That's `validate`.
+- Triage does **not** open PRs. That's `heal`.
+- Triage MUST stop at the verdict — no "and here's the fix" suggestions.
+
+## Tools
+
+- `read` — artifacts, source, history files
+- `grep` — log scans, error pattern matching
+- `bash` — `npx playwright show-trace`, `az pipelines runs show`, `kusto.cli` for flake history
+
+## Model
+
+- Preferred: `claude-sonnet-4.5`
+- Acceptable fallback: `claude-haiku-4-5` (cheaper for high-volume monitor jobs)
+
+## Invoking it
+
+```powershell
+pwagent run triage --run-id 12345
+pwagent run triage --artifact ./failure.json
+pwagent run triage --example                  # canned fixture for demos
+```
+
+## Required stamps
+
+None. Triage is the *first* step of the heal flow — it produces the stamp `heal` later requires.
+
+## Source
+
+[`cli/src/content/agents/triage/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/triage/charter.md)

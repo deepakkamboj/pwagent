@@ -1,0 +1,121 @@
+---
+title: Auth & Safety
+---
+
+# Auth & Safety
+
+The portal runs as a **local-only**, **single-user** server. The threat model is "another process on the same machine, or a network neighbour, accidentally sees the portal". Not "a determined adversary inside the loopback interface".
+
+## Three layers of defense
+
+### 1. Loopback enforcement (always on)
+
+[`portal/middleware.ts`](https://github.com/microsoft/pwagent/blob/main/portal/middleware.ts) refuses any request whose `Host` header is **not** loopback (`127.0.0.1`, `[::1]`, `localhost`). It also rejects every `X-Forwarded-*` header.
+
+```ts
+const host = req.headers.get('host') ?? '';
+const isLoopback =
+  host.startsWith('127.0.0.1') ||
+  host.startsWith('localhost') ||
+  host.startsWith('[::1]');
+
+if (!isLoopback && process.env.PWAGENT_PORTAL_BIND_ALL !== '1') {
+  return new Response('loopback only — set PWAGENT_PORTAL_BIND_ALL=1 to override', { status: 403 });
+}
+
+if (req.headers.get('x-forwarded-for') || req.headers.get('x-forwarded-host')) {
+  return new Response('X-Forwarded-* refused — running behind a proxy?', { status: 403 });
+}
+```
+
+This is the **always-on guard**. Even if Next.js binds `0.0.0.0` by accident, requests from the network are rejected.
+
+### 2. Bearer auth (every Server Action)
+
+On first start, `pwagent portal start` generates a random 32-byte secret and writes it to `~/.pwagent/portal/secret`:
+
+```ts
+// portal/lib/secret.ts
+async function ensureSecret(): Promise<string> {
+  const path = secretPath();
+  try {
+    const buf = await fs.readFile(path);
+    return buf.toString().trim();
+  } catch {
+    const secret = randomBytes(32).toString('hex');
+    await fs.mkdir(dirname(path), { recursive: true });
+    await fs.writeFile(path, secret, { mode: 0o600 });   // chmod 600
+    return secret;
+  }
+}
+```
+
+The user signs in once by pasting the secret. The portal sets an **HttpOnly** session cookie:
+
+```ts
+cookies().set('pwagent_session', hmac(secret, sessionToken), {
+  httpOnly: true,
+  sameSite: 'strict',
+  secure: false,   // loopback, no TLS
+  path: '/',
+  maxAge: 60 * 60 * 24 * 7,
+});
+```
+
+Every Server Action calls `requireWriteAuth()`:
+
+```ts
+export async function requireWriteAuth() {
+  const cookie = cookies().get('pwagent_session');
+  if (!cookie) throw new Response('unauthorized', { status: 401 });
+  const valid = timingSafeEqual(...);
+  if (!valid) throw new Response('unauthorized', { status: 401 });
+}
+```
+
+GET routes do **not** require auth — read-only browsing works without the cookie. **Mutations require it.**
+
+### 3. `--read-only` mode
+
+`pwagent portal start --read-only` sets `PWAGENT_PORTAL_READ_ONLY=1`. Every Server Action checks this first thing and throws if set. The UI also shows a yellow banner across every page.
+
+Use for:
+
+- Shared kiosk dashboards in a team room
+- Screenshots / demos where you don't want a stray click to disable a job
+- CI gating: the build agent can render `/audit` without being able to mutate
+
+## What `--bind-all` does
+
+```bash
+pwagent portal start --bind-all
+```
+
+Binds Next.js to `0.0.0.0` and **disables the loopback guard**. The bearer cookie and Server Action auth still apply.
+
+Use only behind a trusted reverse proxy (nginx, Caddy, Tailscale Funnel) that:
+
+- Terminates TLS
+- Authenticates upstream (OIDC, mTLS)
+- Strips `X-Forwarded-*` headers it didn't set itself
+
+Without one of those, **don't use `--bind-all`**.
+
+## File permissions
+
+| File | Mode | Notes |
+|---|---|---|
+| `~/.pwagent/portal/secret` | `0600` | Owner read/write only |
+| `~/.pwagent/portal/sessions.json` | `0600` | Owner read/write only |
+| `~/.pwagent/audit/events.jsonl` | `0644` | World-readable on POSIX (not sensitive) |
+
+On Windows, the equivalent NTFS ACLs are applied via `icacls`. The portal refuses to start if the secret file isn't owner-only.
+
+## Threats we don't defend against
+
+| Threat | Why not |
+|---|---|
+| Another local user reads the audit log | Not a threat we model — pwagent is single-user |
+| Malware on the same machine reads the secret | Same. Filesystem access = game over regardless |
+| A browser extension reads the cookie | HttpOnly mitigates; we can't block extensions |
+| A malicious workspace charter calls `bash rm -rf /` | The tool sandbox refuses paths outside `cwd` and `~/.pwagent/` |

@@ -1,0 +1,59 @@
+---
+title: Scenario
+---
+
+# Scenario
+
+The **scenario** agent analyzes source + tests to find untested behaviour.
+
+## Identity
+
+- **Role:** Coverage analyzer
+- **Project:** pwagent
+- **Default mode:** Standard
+
+## Responsibilities
+
+- Scan `src/` for user-facing flows (routes, button handlers, form submits)
+- Scan `tests/` for `.spec.ts` coverage of those flows
+- Emit one `ScenarioGap` row per untested flow with severity and a suggested test outline
+- Save the output to `~/.pwagent/scenarios/<date>.md` for the plan agent to consume
+
+## Boundaries
+
+- Scenario does **not** write tests. That's `generate`.
+- Scenario does **not** modify product code.
+- Scenario does **not** dismiss flows it doesn't understand — it logs them as `unknown` with a request for human input.
+
+## Tools
+
+- `read`, `grep`
+- `bash` — for repo-level `ls-files`, `git log --oneline -10 src/...` to weight recently-changed areas
+
+## Model
+
+- Preferred: `claude-sonnet-4.5`
+
+## Invoking it
+
+```powershell
+pwagent run scenario                                   # scan whole repo
+pwagent run scenario --path src/checkout              # scoped scan
+```
+
+## A typical row
+
+```markdown
+### ScenarioGap-0042 — checkout / upsell modal
+
+| Field | Value |
+|---|---|
+| Severity | P2 |
+| Flow | Logged-in user adds an item; modal offers upsell; user dismisses |
+| Why untested | No `.spec.ts` covers the dismiss path; only the accept path is covered |
+| Suggested test | `tests/checkout/upsell-dismiss.spec.ts` — assert modal disappears, cart unchanged |
+```
+
+## Source
+
+[`cli/src/content/agents/scenario/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/scenario/charter.md)

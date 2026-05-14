@@ -1,0 +1,63 @@
+---
+title: Response Mode Selection
+---
+
+# Response Mode Selection
+
+For every user turn, the coordinator picks one of four modes. The mode tunes cost / latency / parallelism — it does **not** change which agent runs.
+
+| Mode | When the coordinator picks it | Target latency | Spawn shape | Ceremony |
+|---|---|---|---|---|
+| **Direct** | Status checks, factual answers derivable from context already in memory | ~2–3 s | None — coordinator answers itself | No |
+| **Lightweight** | Single-file edits, small fixes, "rename X to Y" | ~8–12 s | 1 agent, minimal prompt | No |
+| **Standard** | Normal triage / heal / generate tasks, full ceremony | ~25–35 s | 1 agent, full context | Yes |
+| **Full** | Multi-agent "team" requests, weekly reports, coverage sweeps | ~40–60 s | Parallel fan-out + Scribe | Yes |
+
+## How the coordinator picks
+
+The decision lives in [`cli/src/runtime/responseMode.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/runtime/responseMode.ts). The order of checks:
+
+1. **Was `--mode` explicit?** Honor it. No further inference.
+2. **Is the agent named directly?** `pwagent run triage --run-id X` → at least Lightweight; if the agent's charter declares `## Default mode: standard`, → Standard.
+3. **Is the routing.md row marked `mode: full`?** → Full (weekly report, coverage nightly).
+4. **Is the prompt a question that doesn't require tool use?** → Direct.
+5. **Default** → Standard.
+
+## Overriding per invocation
+
+```powershell
+pwagent run triage --mode light --run-id 12345
+pwagent run report --mode full
+pwagent run "what's the status of job pwagent-monitor" --mode direct
+```
+
+`--mode` is a hint, not a hard contract — the coordinator can refuse if the requested mode is impossible (e.g. `--mode direct` on a heal task that requires reading files).
+
+## What changes per mode
+
+| Aspect | Direct | Light | Standard | Full |
+|---|---|---|---|---|
+| Loads charter | No (uses default supervisor only) | Yes | Yes | Yes |
+| Loads skills | No | top-1 | top-3 | top-5 + ceremony-injected |
+| Master prompt prefix | minimal | minimal | full | full |
+| Tool loop | n/a | enabled | enabled | enabled |
+| Spawn | no spawn | 1 child | 1 child | parallel `Promise.all` |
+| Scribe writes to log | no | no | yes | yes |
+| Ceremony runs after | no | no | yes | yes |
+| Idle timeout | 30 s | 120 s | 300 s | 600 s |
+
+## Cost implications
+
+The Full mode is the only one that fans out into parallel spawns. A weekly-report run in Full will issue ~5 concurrent SDK sessions (one per sub-agent: report, scenario, scribe, etc.). Direct is the cheapest — no SDK call at all when the answer is in conversational context.
+
+If you want to *cap* cost regardless of agent, pin the mode in `config.json`:
+
+```jsonc
+{
+  "responseMode": {
+    "max": "standard"
+  }
+}
+```
+
+The coordinator will silently downgrade Full → Standard. Useful for CI runners where wall-clock matters more than thoroughness.

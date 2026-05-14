@@ -1,0 +1,33 @@
+{
+  "name": "pwagent-monorepo",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Monorepo wrapper for the @pwagent/cli (cli/), @pwagent/portal (portal/), and @pwagent/docs (docs/) packages. Single install, single build.",
+  "workspaces": [
+    "cli",
+    "portal",
+    "docs"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:cli": "npm run build --workspace cli",
+    "build:portal": "npm run build --workspace portal",
+    "build:docs": "npm run build --workspace docs",
+    "dev": "npm run dev --workspace cli",
+    "dev:portal": "npm run dev --workspace portal",
+    "dev:docs": "npm run dev --workspace docs",
+    "start:docs": "npm run start --workspace docs",
+    "test": "npm run test --workspace cli",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "pwagent": "node cli/dist/index.js"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

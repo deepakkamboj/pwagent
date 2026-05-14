@@ -1,0 +1,123 @@
+---
+title: Scheduler
+---
+
+# Scheduler
+
+The scheduler is an **in-process tick loop** inside the same `pwagent` binary. Same logs, same config, same process. There is no separate daemon.
+
+## Job spec
+
+```jsonc
+{
+  "id": "pwagent-monitor",
+  "description": "Long-poll ADO + GH Actions for new failures",
+  "enabled": true,
+  "schedule": { "type": "interval", "minutes": 5 },
+  "command": "pwagent monitor --once",
+  "maxRunSeconds": 600,
+  "retry": { "onExitCodes": [1, 124], "maxAttempts": 2, "backoffSeconds": 30 },
+  "disableAfterConsecutiveFailures": 5,
+  "logs":   { "path": "~/.pwagent/logs/scheduler/monitor.log" },
+  "events": { "path": "~/.pwagent/logs/scheduler/pwagent-monitor.jsonl" }
+}
+```
+
+Job files live in `~/.pwagent/scheduler/*.json`. **Hot-reloaded** on file change — no scheduler restart needed.
+
+## Schedule types
+
+| `type` | Fields | Example |
+|---|---|---|
+| `interval` | `minutes`, `seconds`, `hours` | `{ "type": "interval", "minutes": 5 }` |
+| `daily` | `at` (HH:MM, 24h, local time) | `{ "type": "daily", "at": "02:00" }` |
+| `weekly` | `day` (Mon–Sun), `at` | `{ "type": "weekly", "day": "Fri", "at": "17:00" }` |
+| `cron` | `expr` | `{ "type": "cron", "expr": "*/5 9-17 * * 1-5" }` |
+
+## Seed jobs
+
+All ship `enabled: false` by default. Enable each one explicitly.
+
+| Job id | Schedule | Purpose |
+|---|---|---|
+| `pwagent-monitor` | `interval: 5m` | Pull new failures from ADO + GH Actions; route to triage |
+| `pwagent-coverage-nightly` | `daily: 02:00` | Scan `src/` + `tests/` for scenario gaps |
+| `pwagent-report-weekly` | `weekly: Fri 17:00` | Generate weekly Markdown + HTML report |
+| `pwagent-learner-nightly` | `daily: 03:00` | Extract fix patterns from green runs |
+
+Enable one:
+
+```powershell
+pwagent job enable pwagent-monitor
+```
+
+## Tick loop guarantees
+
+- **Per-job locks** — `<id>.lock` file prevents overlapping runs of the same job
+- **Per-process lock** — `~/.pwagent/scheduler/.lock` prevents two scheduler instances
+- **Atomic state writes** — `state.json.tmp` + rename
+- **JSONL event stream** — one file per job (`<id>.jsonl`), append-only
+- **Hot-reload** — `fs.watch` on `~/.pwagent/scheduler/`; new specs picked up next tick
+- **Retry with backoff** — `retry.onExitCodes` matches, sleeps `backoffSeconds`, re-runs
+- **Auto-disable** — after `disableAfterConsecutiveFailures` failures, sets `enabled: false` in the spec
+
+## Lifecycle events (JSONL)
+
+Every run emits:
+
+```jsonc
+{ "ts": "2026-05-13T12:00:00Z", "type": "agent_start",  "job": "pwagent-monitor", "attempt": 1 }
+{ "ts": "2026-05-13T12:00:02Z", "type": "agent_log",    "job": "pwagent-monitor", "line": "found 3 new failures" }
+{ "ts": "2026-05-13T12:00:18Z", "type": "agent_end",    "job": "pwagent-monitor", "exitCode": 0, "durationMs": 18412 }
+```
+
+On failure:
+
+```jsonc
+{ "ts": "...", "type": "agent_error", "job": "pwagent-monitor", "exitCode": 1, "stderr": "..." }
+{ "ts": "...", "type": "agent_disabled", "job": "pwagent-monitor", "reason": "consecutive failures: 5" }
+```
+
+The portal's `/jobs/<id>` page tails this file via SSE.
+
+## Platform service installer
+
+```bash
+pwagent service install
+```
+
+Registers the scheduler with the OS service manager so it survives reboots:
+
+| Platform | Mechanism |
+|---|---|
+| Windows | Task Scheduler XML (`schtasks /Create`) |
+| macOS | launchd plist (`launchctl load`) |
+| Linux | systemd `--user` unit (`systemctl --user enable --now`) |
+
+```bash
+pwagent service status            # is it installed and running?
+pwagent service uninstall         # remove the registration
+```
+
+The service runs `pwagent scheduler start` — same code path as foreground.
+
+## Adding a custom job
+
+Drop a spec into `~/.pwagent/scheduler/<your-id>.json` and it picks up on the next tick (within ~1 s). Or use the CLI:
+
+```powershell
+pwagent job add ./my-job.json
+pwagent job enable my-job
+pwagent job logs my-job -n 20
+```
+
+Or use the portal at `/jobs` → "New job" form, which validates the spec via zod before writing.
+
+## Dry-run
+
+```powershell
+pwagent scheduler dry-run pwagent-monitor                # simulate next tick, no execution
+pwagent scheduler dry-run pwagent-monitor --execute      # execute the command immediately
+```
+
+Useful for testing schedule expressions and retry behaviour without waiting for the real tick.

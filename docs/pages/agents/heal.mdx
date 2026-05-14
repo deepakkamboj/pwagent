@@ -1,0 +1,84 @@
+---
+title: Heal
+---
+
+# Heal
+
+The **heal** agent patches a failing test or product bug. It's the only agent that writes code.
+
+## Identity
+
+- **Role:** Patch + PR
+- **Project:** pwagent
+- **Default mode:** Standard
+
+## Responsibilities
+
+- Load the stamped triage verdict (refuses to start without one)
+- Read the failure trace and offending source files
+- Propose a patch as a unified diff
+- Confirm with the user before writing (interactive mode) or auto-apply (non-interactive)
+- Run `npx playwright test <path>` to validate the fix
+- Run the fixed test **a second time** (validate agent) to catch flakes the fix could mask
+- Open an ADO or GitHub PR with a structured description
+
+## Boundaries
+
+- Heal does **not** start without a stamped triage verdict.
+- Heal does **not** rewrite the test under fix to make a failing assertion pass — it fixes the *underlying* cause.
+- Heal does **not** merge its own PR. Merging is human-only.
+- Heal does **not** chain into `generate` to add coverage for the fix — that's a separate `pwagent run generate --from-heal <pr>` call.
+
+## Tools
+
+- `read`, `write`, `edit` — source code mutation
+- `grep` — locate affected paths
+- `bash` — `git`, `npx playwright test`, `gh pr create` (or `az repos pr create`)
+
+## Model
+
+- Preferred: `claude-sonnet-4.5`
+- Acceptable fallback: `claude-opus-4-7` for high-stakes refactors
+
+## Invoking it
+
+```powershell
+pwagent run heal --from-triage 12345        # uses the stamped triage verdict
+pwagent run heal --bug AB#54321              # ADO work item — heal reads its description for context
+pwagent run heal --diff-only                 # propose patch, do not write or open PR
+```
+
+## Required stamps
+
+| Predecessor | Stamp |
+|---|---|
+| `triage` | `[p]` ProductBug, `[t]` TestCodeBug, or `[o]` Inconclusive (with rationale) |
+
+Stamps live in `~/.pwagent/audit/events.jsonl` as `review.stamp` events.
+
+## What the PR description looks like
+
+```markdown
+## Summary
+
+heal-agent patched login.spec.ts to wait for the submit button's
+loaded state before clicking. Original failure trace shows a 30s
+hang on click() because the button rendered late under React 19's
+new reconciler.
+
+## Test plan
+
+- [x] `npx playwright test tests/login.spec.ts` (passes locally)
+- [x] re-run after fix passes a second time (validate agent)
+- [ ] CI green
+- [ ] reviewer sign-off
+
+## Linked
+
+- Triage verdict: TestCodeBug (confidence 0.91)
+- Audit: see `review.stamp` for run-id 12345 in pwagent audit log
+```
+
+## Source
+
+[`cli/src/content/agents/heal/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/heal/charter.md)

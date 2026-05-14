@@ -1,0 +1,13 @@
+// All previously-stubbed commands are now implemented in their own files:
+//   - run.ts        → pwagent run <agent>
+//   - scheduler.ts  → pwagent scheduler / job ...
+//   - portal.ts     → pwagent portal ...
+//   - ralph.ts      → pwagent ralph ...
+//   - review.ts     → pwagent review
+//   - audit.ts      → pwagent audit ...
+//
+// This file is intentionally empty after the R1b–R3 push. It used to host
+// placeholder commands; keeping the module exists so that previous imports
+// resolve cleanly if any consumer still references it.
+
+export {};

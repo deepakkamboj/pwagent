@@ -1,0 +1,90 @@
+---
+title: Server Actions
+---
+
+# Server Actions
+
+Server Actions are the write-side of the portal. Every one of them mutates state under `~/.pwagent/`.
+
+## The contract
+
+Every Server Action follows this shape:
+
+```ts
+'use server';
+
+import { requireWriteAuth } from '@/lib/auth';
+import { revalidatePath } from 'next/cache';
+
+export async function enableJob(formData: FormData) {
+  await requireWriteAuth();                    // throws 401 if unauthenticated
+  if (process.env.PWAGENT_PORTAL_READ_ONLY === '1') {
+    throw new Error('read-only mode');
+  }
+
+  const id = formData.get('id')?.toString();
+  if (!id) throw new Error('missing id');
+
+  await writeSpec(id, { enabled: true });
+  revalidatePath('/jobs');
+  revalidatePath(`/jobs/${id}`);
+}
+```
+
+Three guarantees:
+
+1. **Auth first.** `requireWriteAuth()` runs before any state read.
+2. **Read-only honored.** The `PWAGENT_PORTAL_READ_ONLY=1` env var short-circuits every mutation.
+3. **Cache invalidation.** `revalidatePath` ensures the next SSR fetches fresh data.
+
+## The full set
+
+### `app/jobs/_actions.ts`
+
+| Action | Inputs | Effect |
+|---|---|---|
+| `enableJob(formData)` | `id` | Sets `enabled: true` in `<id>.json`; atomic write |
+| `disableJob(formData)` | `id` | Sets `enabled: false`; atomic write |
+| `fireNow(formData)` | `id` | Spawns `pwagent scheduler dry-run <id> --execute` |
+| `createJob(formData)` | full spec | Validates via zod, writes new file |
+| `updateJob(formData)` | `id` + diff | Loads, merges, writes atomically |
+| `deleteJob(formData)` | `id` | Removes `<id>.json`; preserves `<id>.jsonl` for history |
+
+### `app/config/_actions.ts`
+
+| Action | Inputs | Effect |
+|---|---|---|
+| `saveConfig(formData)` | full config JSON | Parses, zod-validates, computes diff vs. on-disk, atomically writes |
+
+The form on `/config` shows the diff **before** the user clicks Save, so they can review the change. Save then writes `~/.pwagent/config.json.tmp` and renames over `config.json`.
+
+### `app/audit/_actions.ts`
+
+| Action | Inputs | Effect |
+|---|---|---|
+| `exportAudit(formData)` | filters | Streams the result back as a download |
+
+Export is implemented as a route (`/api/audit/export?...`), but the form posts go through this Server Action so the auth + filter validation is unified.
+
+### `app/_actions/auth.ts`
+
+| Action | Inputs | Effect |
+|---|---|---|
+| `signInWithSecret(formData)` | `secret` | Compares against `~/.pwagent/portal/secret` (timing-safe); sets HttpOnly cookie |
+| `signOut()` | — | Clears the cookie |
+
+## Why Server Actions, not API routes
+
+| Concern | API route | Server Action |
+|---|---|---|
+| Tied to a form submit | needs custom `fetch` + CSRF | `<form action={...}>` native |
+| Type safety end-to-end | breaks at JSON boundary | shared TS types across boundary |
+| Optimistic UI | manual | `useFormStatus` |
+| Cache invalidation | manual `mutate` calls | `revalidatePath()` |
+| Discoverability | scattered under `app/api/` | next to the page that uses them |
+
+API routes still exist for GET reads, SSE, and JSON export. Mutation is exclusively Server Actions.
+
+## Testing
+
+There's no live HTTP layer to mock — Server Actions are just async functions. Tests at [`portal/tests/actions/`](https://github.com/microsoft/pwagent/blob/main/portal/tests/actions/) call them directly with synthetic `FormData` and assert filesystem effects.

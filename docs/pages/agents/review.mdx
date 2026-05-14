@@ -1,0 +1,61 @@
+---
+title: Review
+---
+
+# Review
+
+The **review** agent is the **HITL gate**. It does not run autonomously — it processes a queue of unsigned verdicts and asks a human to stamp each one.
+
+## Identity
+
+- **Role:** Human-in-the-loop reviewer interface
+- **Project:** pwagent
+- **Default mode:** Direct (interactive prompt loop, no SDK call between stamps)
+
+## Responsibilities
+
+- Read `~/.pwagent/review/queue.jsonl` for unsigned verdicts
+- For each entry, render: agent name, run id, verdict, confidence, rationale, the offending artifact
+- Accept a single-key stamp: `[p]` ProductBug, `[t]` TestCodeBug, `[s]` Skip, `[o]` Inconclusive / Other
+- Append a `review.stamp` event to the audit log
+- Remove the stamped entry from the queue
+
+## Boundaries
+
+- Review does **not** make verdicts itself — only records the human's call.
+- Review does **not** prompt the model for input — every key press is human.
+- Review does **not** chain into `heal` — the user does that explicitly after stamping.
+
+## Tools
+
+- `read`, `write` — queue + audit log
+- (No `bash`. Stamping is pure I/O.)
+
+## Model
+
+- Preferred: `claude-haiku-4-5` (Direct mode rarely calls the SDK; only if the user asks "what's the failure context for this verdict?")
+
+## Invoking it
+
+```powershell
+pwagent review                  # interactive stamp loop
+pwagent review --batch          # one stamp per line on stdin (CI)
+```
+
+Sample interactive session:
+
+```
+[1/5] triage verdict for run 12345
+  verdict: ProductBug   confidence: 0.82
+  rationale: Server returned 400 for a payload the test claims is valid.
+
+  [p] ProductBug  [t] TestCodeBug  [s] Skip  [o] Inconclusive   stamp> p
+  ✓ stamped. Audit event appended.
+
+[2/5] triage verdict for run 12346
+  ...
+```
+
+## Source
+
+[`cli/src/content/agents/review/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/review/charter.md)

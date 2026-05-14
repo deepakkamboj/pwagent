@@ -1,0 +1,85 @@
+{
+  "$schema": "https://example.com/pwagent.schema.json",
+
+  "provider": {
+    "clientName": "pwagent",
+    "model": "claude-sonnet-4.5",
+    "logLevel": "error",
+    "perAgent": {
+      "heal":     { "model": "claude-opus-4.5" },
+      "triage":   { "model": "claude-opus-4.5" },
+      "report":   { "model": "claude-haiku-4.5" },
+      "validate": { "model": "claude-haiku-4.5" }
+    }
+  },
+
+  "ado": {
+    "org": "https://dev.azure.com/<your-org>",
+    "project": "<your-project>",
+    "defaultRepo": "<your-repo>"
+  },
+
+  "repos": [
+    {
+      "name": "<your-repo>",
+      "path": "D:/code/<your-repo>",
+      "type": "ado",
+      "defaultBranch": "main"
+    }
+  ],
+
+  "schedules": [
+    {
+      "name": "monitor-daemon",
+      "kind": "startup",
+      "command": "pwagent run triage --once",
+      "logFile": "%USERPROFILE%/.pwagent/logs/scheduler/monitor-{date}.log",
+      "enabled": false,
+      "_comment": "kind=startup → fires once when the scheduler starts. Use for long-poll watchers, daemons that maintain their own loop."
+    },
+    {
+      "name": "nightly-flake-refresh",
+      "kind": "daily",
+      "time": "02:00",
+      "command": "pwagent run scenario --gaps-only",
+      "logFile": "%USERPROFILE%/.pwagent/logs/scheduler/flake-refresh-{date}.log",
+      "enabled": false,
+      "_comment": "kind=daily → fires at the given HH:mm in local TZ. Replace with kind=cron if you need a non-fixed window."
+    },
+    {
+      "name": "weekly-report",
+      "kind": "weekly",
+      "weekday": "Friday",
+      "time": "17:00",
+      "command": "pwagent run report --period weekly",
+      "logFile": "%USERPROFILE%/.pwagent/logs/scheduler/weekly-report-{date}.log",
+      "enabled": false,
+      "_comment": "kind=weekly → once per week. weekday + time both required."
+    },
+    {
+      "name": "monitor-poll-5m",
+      "kind": "interval",
+      "interval": 5,
+      "command": ["gh", "copilot", "ask", "/triage --watch"],
+      "logFile": "%USERPROFILE%/.pwagent/logs/scheduler/monitor-poll-{date}.log",
+      "enabled": false,
+      "_comment": "kind=interval → every N minutes. command may be a string (run via shell) or an argv array (run directly)."
+    }
+  ],
+
+  "scheduler": {
+    "stateDir": "~/.pwagent/scheduler",
+    "logDir":   "~/.pwagent/logs/scheduler"
+  },
+
+  "tools": {
+    "allowlist": ["read", "write", "edit", "bash", "grep", "gh", "az", "npx"]
+  },
+
+  "audit": {
+    "enabled": true,
+    "path": "~/.pwagent/audit/events.jsonl"
+  },
+
+  "defaultSurface": "cli"
+}

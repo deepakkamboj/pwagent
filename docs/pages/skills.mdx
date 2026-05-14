@@ -1,0 +1,109 @@
+---
+title: Skills
+---
+
+import { Cards, Card } from '../components/Cards';
+import { BookOpen, Compass, Workflow, Terminal, Database, GitBranch, Accessibility } from 'lucide-react';
+
+# Skills
+
+pwagent ships **60+ skill guides** across **7 packs**. Each is a Markdown file with `name:` and `description:` frontmatter that the [coordinator](/architecture/coordinator) keyword-scores against the user's prompt to inject the most relevant ones at spawn time.
+
+## The seven packs
+
+| Pack | Files | Shape | What it covers |
+|---|---|---|---|
+| `core/` | 22 | flat-file | Playwright primitives — locators, assertions, fixtures, retries, traces, devices |
+| `ci/` | 8 | flat-file | CI/CD — GitHub Actions, ADO Pipelines, sharding, artifact upload, baseline pinning |
+| `pom/` | 6 | flat-file | Page Object Model — page classes, component classes, fixture wiring |
+| `playwright-cli/` | 11 | flat-file | `npx playwright codegen`, traces, devices, debugging |
+| `kusto/` | 1 | Squad-shape (`SKILL.md`) | Kusto queries for flake history, run stats, regression hunting |
+| `ado/` | 1 | Squad-shape | ADO work items, pull requests via REST (not `az pr create`), pipeline runs |
+| `a11y/` | 1 | Squad-shape | Accessibility — axe-core integration, WCAG verification, fix patterns |
+
+## Two file shapes
+
+The runtime accepts both:
+
+**Flat file** — one skill per `.md` file:
+
+```
+cli/src/content/skills/core/locators.md
+cli/src/content/skills/core/fixtures.md
+cli/src/content/skills/ci/sharding.md
+```
+
+**Squad-shape** — one folder per skill, `SKILL.md` inside:
+
+```
+cli/src/content/skills/kusto/SKILL.md
+cli/src/content/skills/ado/SKILL.md
+cli/src/content/skills/a11y/SKILL.md
+```
+
+Squad-shape lets a skill ship adjacent assets (`prompts/`, `examples/`, etc.) without polluting the pack root. Flat-file is faster to skim. **Both load identically — pick whichever fits.**
+
+## Frontmatter contract
+
+Every skill needs:
+
+```yaml
+---
+name: locators
+description: When and how to use role-based locators (getByRole) vs CSS / XPath fallbacks. Stability rules and common pitfalls.
+---
+```
+
+The `description:` is what skill-aware scoring matches against. **Be specific** — `description: about locators` matches nothing useful; `description: When to use getByRole vs CSS selectors for stable Playwright tests` matches well.
+
+## Listing them
+
+```powershell
+pwagent skills list                          # all 60+
+pwagent skills list --pack core              # one pack
+pwagent skills list --pack playwright-cli
+pwagent skills show core/locators            # full skill
+pwagent skills show ado                      # Squad-shape — implicit SKILL.md
+```
+
+## Browsing in the portal
+
+`http://127.0.0.1:7337/skills` renders one card per skill, grouped by pack. Click a card to view the full Markdown.
+
+## Adding a skill
+
+1. Drop a `*.md` (or `<name>/SKILL.md`) into the appropriate pack under [`cli/src/content/skills/`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/skills/).
+2. Include `name:` and `description:` frontmatter.
+3. `npm run build:cli` — `cli/scripts/copy-content.mjs` copies the new file into `dist/content/`.
+4. `pwagent skills list` should show it.
+
+## Overriding a skill per workspace
+
+Drop the same path under `.pwagent/skills/`:
+
+```
+.pwagent/skills/core/locators.md          # overrides the embedded core/locators
+.pwagent/skills/kusto/SKILL.md            # overrides the embedded kusto Squad-shape
+```
+
+Resolution follows the standard four-step [override chain](/architecture/override-chain).
+
+## Where each pack is most useful
+
+<Cards cols={2}>
+  <Card icon={<Workflow />} title="core/" href="/agents/heal">heal, generate — Playwright primitives</Card>
+  <Card icon={<Terminal />} title="playwright-cli/" href="/agents/triage">triage, validate — codegen, traces</Card>
+  <Card icon={<GitBranch />} title="ci/" href="/agents/heal">heal, generate — pipeline sharding / artifacts</Card>
+  <Card icon={<BookOpen />} title="pom/" href="/agents/generate">generate — POM scaffolding</Card>
+  <Card icon={<Database />} title="kusto/" href="/agents/triage">triage — flake history</Card>
+  <Card icon={<Compass />} title="ado/" href="/agents/heal">heal, triage — ADO bugs, PRs</Card>
+  <Card icon={<Accessibility />} title="a11y/" href="/agents/generate">generate, heal — accessibility tests</Card>
+</Cards>
+
+## Why we publish skill packs separately from agents
+
+Agents are *who*. Skills are *what they know*. Splitting them means:
+
+- **Reuse.** `core/locators` is loaded by triage, heal, generate, validate — write it once.
+- **Targeted updates.** A Playwright API change touches `core/`, not every charter.
+- **Confidence lifecycle.** `~/.pwagent/skills/<name>/.confidence` tracks how often a skill helped — low-confidence skills get auto-deprioritised in skill-aware scoring.

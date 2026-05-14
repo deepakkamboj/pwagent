@@ -1,0 +1,90 @@
+---
+title: Tool Sandbox
+---
+
+# Tool Sandbox
+
+Every agent runs inside a sandbox that intermediates between the model and the filesystem / shell. There are five tools, an allowlist, and hard caps on output size and runtime.
+
+## The five tools
+
+| Tool | Purpose | Notes |
+|---|---|---|
+| `read` | Read text files | Returns content; refuses binary files (>10% non-printable bytes) |
+| `write` | Write text files | Creates parent dirs; refuses to overwrite without `force: true` |
+| `edit` | Exact-match string replacement | Refuses if `old_string` is not unique or not found |
+| `bash` | Shell out to allowlisted binaries | See **Binary allowlist** below |
+| `grep` | Content search | rg-aware (prefers ripgrep; falls back to grep) |
+
+## Binary allowlist
+
+The `bash` tool refuses commands whose first token is not on this list:
+
+```
+git · gh · az · npx · npm · node · pwsh · powershell · bash · sh · kusto.cli · axe
+```
+
+Refused calls return a structured error to the model — they don't crash the agent. The model is expected to either pick a different tool or stop.
+
+## Hard caps
+
+| Limit | Default | Override |
+|---|---|---|
+| Output size per tool call | 200 KB | `--tool-output-max-kb` |
+| Default timeout per tool call | 120 s | `--tool-timeout-s` |
+| Concurrent tool calls per session | 1 (serial) | n/a |
+| Total session wall-clock | per-mode idle timeout | `--idle-timeout-s` |
+| File size for `read` | 10 MB | refuse beyond |
+| File size for `write` | 10 MB | refuse beyond |
+
+Hitting a cap returns a structured `tool.error` event, not a crash. The model sees the error and adapts.
+
+## Path constraints
+
+Every read/write/edit path resolves relative to:
+
+- The **current working directory** (`pwagent run --cwd <path>` overrides) — for workspace ops.
+- The **user state directory** `~/.pwagent/` — for state ops.
+
+Paths outside both roots are **refused**. There is no escape hatch (no `--allow-arbitrary-paths`). If you need to operate elsewhere, `cd` there and run `pwagent` again.
+
+## Tool emission to the audit log
+
+Every successful tool invocation emits:
+
+```jsonc
+{ "ts": "...", "type": "tool.invoke", "agent": "heal", "tool": "edit", "path": "tests/login.spec.ts", "durationMs": 142 }
+```
+
+Every refused or errored one emits:
+
+```jsonc
+{ "ts": "...", "type": "tool.error", "agent": "heal", "tool": "bash", "reason": "binary not allowlisted: docker" }
+```
+
+## Why we sandbox instead of letting the model run free
+
+| Risk | Without sandbox | With sandbox |
+|---|---|---|
+| Model `rm -rf`s | Possible — single `bash` call away | `rm` is not on the allowlist; `bash` is, but `rm` isn't its first token |
+| Model curls a malicious URL | Possible — `curl` is everywhere | `curl` is not allowlisted |
+| Model writes to `C:\Windows\System32\` | Possible | Path resolves outside `cwd` and `~/.pwagent/`, refused |
+| Model spins infinite loops | Possible | Per-tool 120 s timeout + per-session idle timeout |
+| Model floods stdout | Possible | 200 KB output cap per call |
+
+The trade is **safety + audit-ability** for some loss of generality. A few skills (e.g. `external/docker`) require workarounds; we accept that.
+
+## Extending the allowlist
+
+Edit [`cli/src/runtime/tools/bashAllowlist.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/runtime/tools/bashAllowlist.ts):
+
+```ts
+export const BASH_ALLOWLIST = [
+  'git', 'gh', 'az', 'npx', 'npm', 'node',
+  'pwsh', 'powershell', 'bash', 'sh',
+  'kusto.cli', 'axe',
+  // 'docker',         // ← uncomment to add
+] as const;
+```
+
+Then rebuild: `npm run build:cli`. There is no run-time override — the allowlist is compiled in for the same reason CSP nonces are.

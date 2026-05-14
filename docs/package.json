@@ -1,0 +1,26 @@
+{
+  "name": "@pwagent/docs",
+  "version": "0.1.0",
+  "description": "pwagent end-to-end professional documentation site (Nextra + Next.js).",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 7338 --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --port 7338 --hostname 127.0.0.1",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "^0.263.1",
+    "next": "^14.2.0",
+    "nextra": "^3.3.1",
+    "nextra-theme-docs": "^3.3.1",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

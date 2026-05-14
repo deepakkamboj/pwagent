@@ -1,0 +1,56 @@
+---
+title: Validate
+---
+
+# Validate
+
+The **validate** agent runs a single test **twice** via `npx playwright test`. Two passes = confidence the fix isn't masking a flake. Used by `heal` after every patch.
+
+## Identity
+
+- **Role:** Flake hunter
+- **Project:** pwagent
+- **Default mode:** Lightweight
+
+## Responsibilities
+
+- Accept a `.spec.ts` path + optional `--repeat N` (default 2)
+- Run `npx playwright test <path>` N times serially
+- Emit one of: `pass-all`, `pass-some`, `fail-all`, `fail-some`
+- Capture every run's `trace.zip` into `~/.pwagent/validate/<run-id>/`
+- Return exit 0 on `pass-all`, non-zero otherwise
+
+## Boundaries
+
+- Validate does **not** edit the test under validation.
+- Validate does **not** triage the failure (when it fails) — it just reports the verdict.
+- Validate does **not** retry indefinitely. N=2 by default; N=5 max.
+
+## Tools
+
+- `bash` — only `npx playwright test`. No other binary needed.
+
+## Model
+
+- Preferred: `claude-haiku-4-5`. Validate's logic is mechanical; cheap model is fine.
+
+## Invoking it
+
+```powershell
+pwagent run validate tests/login.spec.ts
+pwagent run validate tests/login.spec.ts --repeat 3
+pwagent run validate tests/login.spec.ts --grep "happy path"
+```
+
+## How `heal` uses it
+
+After every `heal` patch:
+
+1. Run `validate` on the patched test.
+2. If `pass-all` → continue to PR creation.
+3. If `pass-some` → heal flagged as **flaky-fix-suspect**; manual review.
+4. If `fail-all` → patch was wrong; revert.
+
+## Source
+
+[`cli/src/content/agents/validate/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/validate/charter.md)

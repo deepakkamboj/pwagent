@@ -1,0 +1,253 @@
+---
+title: Troubleshooting
+---
+
+# Troubleshooting
+
+Common errors with concrete fixes. If your problem isn't here, check `pwagent doctor` first — it diagnoses most setup issues.
+
+## Bootstrap
+
+### `pwagent: command not found`
+
+You didn't link the CLI globally.
+
+```powershell
+cd D:\gith\pwagent
+npm link --workspace cli
+where.exe pwagent
+```
+
+### `pwagent doctor` exits non-zero immediately
+
+Check the first failing line. If `node ≥22 ✗`, install Node 22 or newer. If `gh ✗`, run `pwagent prereqs --install`. If `gh auth (logged in) ✗`, run `pwagent login`.
+
+### `Copilot SDK reachable [✗] (auth-missing)` in `doctor`
+
+```powershell
+pwagent login                  # gh auth login --web
+pwagent whoami                 # confirms subscription
+pwagent doctor                 # re-probe
+```
+
+If `whoami` says no Copilot subscription, you're using a GitHub account without one. Switch to your Microsoft-internal account: `gh auth logout && gh auth login --hostname github.com`.
+
+### `Copilot SDK reachable [✗] (sdk-missing)` in `doctor`
+
+`@github/copilot-sdk` failed to resolve.
+
+```powershell
+cd D:\gith\pwagent
+npm install                                        # re-install workspaces
+ls node_modules/@github/copilot-sdk                 # verify it's there
+```
+
+If still missing, your `node_modules` is stale: `rm -r node_modules cli/node_modules portal/node_modules docs/node_modules && npm install`.
+
+## Portal
+
+### `error from portal loopback only — set PWAGENT_PORTAL_BIND_ALL=1 to override`
+
+The portal is intentionally refusing a non-loopback request. Three options:
+
+1. **Use loopback.** Hit `http://127.0.0.1:7337` or `http://localhost:7337` from the same machine.
+2. **Allow non-loopback.** Set `PWAGENT_PORTAL_BIND_ALL=1` before starting:
+   ```powershell
+   $env:PWAGENT_PORTAL_BIND_ALL = "1"
+   pwagent portal start --bind-all
+   ```
+3. **Reverse-proxy with TLS.** Only safe behind a trusted proxy that strips `X-Forwarded-*` headers it didn't set.
+
+See [Portal → Auth & Safety](/portal/auth) for the threat model.
+
+### Loopback rejection even when URL bar shows `localhost:7337`
+
+Symptom: the URL bar says `localhost:7337` but the page still displays the `loopback only — …` reject message.
+
+**Cause:** in versions before the v0.4.1 middleware fix, the portal also rejected any request that carried `X-Forwarded-For` or `X-Forwarded-Host` headers — even when the host header itself was loopback. Corporate proxies / VPN clients / browser extensions (ZScaler, PaloAlto GlobalProtect, the Dynamics page-snooper, some Edge sidebar extensions) inject those headers on every request, including localhost traffic. The result: a legitimate loopback request gets the public-host reject.
+
+**Fix:** pull the latest [`portal/middleware.ts`](https://github.com/microsoft/pwagent/blob/main/portal/middleware.ts) and restart the portal. The current policy is:
+
+| Host header | X-Forwarded-* present | Allowed? |
+|---|---|---|
+| loopback (`127.0.0.1` / `localhost` / `[::1]`) | no | ✓ |
+| loopback | yes | ✓ — X-Forwarded-* on loopback is noise from a local interceptor |
+| public | no | ✗ unless `PWAGENT_PORTAL_BIND_ALL=1` |
+| public | yes | ✗ unless `PWAGENT_PORTAL_BIND_ALL=1` |
+
+**Restart pattern:**
+
+```powershell
+# stop the running portal (Ctrl-C or kill its PID)
+# pull / build with the new middleware
+git pull
+npm run build:portal
+pwagent portal start
+```
+
+If you're in dev mode (`next dev`), middleware changes hot-reload but sometimes need a manual restart — `Ctrl-C` and `npm run dev:portal` again.
+
+**Bonus:** if you saw `â€"` in the original error message (instead of `—`), that was the response missing `charset=utf-8` so the em-dash got decoded as CP-1252. Also fixed in the same middleware revision.
+
+### Portal starts but `/agents` is empty
+
+The charters are in `cli/dist/content/agents/`. Did you build the CLI?
+
+```powershell
+npm run build:cli
+ls cli/dist/content/agents
+```
+
+The portal's SSR reads from `cli/dist/`, not `cli/src/`. The build copy step is `cli/scripts/copy-content.mjs`.
+
+### `requireWriteAuth(): unauthorized` on a Server Action
+
+Sign in to the portal with the secret first.
+
+```powershell
+type "$env:USERPROFILE\.pwagent\portal\secret"
+```
+
+Paste it into the portal's sign-in form. The HttpOnly cookie persists for 7 days.
+
+### Portal stuck after first start
+
+```powershell
+pwagent portal status              # is it running?
+# If yes, kill it:
+taskkill /F /IM node.exe           # Windows — careful, kills all node processes
+# Or use the port:
+netstat -ano | findstr :7337
+taskkill /F /PID <pid>
+```
+
+Restart with `pwagent portal start`.
+
+## Scheduler
+
+### Jobs don't run even though `enabled: true`
+
+```powershell
+pwagent scheduler status           # is the loop running?
+pwagent scheduler start            # if not, start it
+```
+
+If the loop is running but a specific job isn't firing:
+
+```powershell
+pwagent job logs pwagent-monitor -n 50    # check for errors
+pwagent scheduler dry-run pwagent-monitor --execute   # force-run it
+```
+
+### `agent_disabled: consecutive failures: 5`
+
+The job hit `disableAfterConsecutiveFailures` and was auto-disabled. Find the root cause:
+
+```powershell
+pwagent job logs pwagent-monitor -n 20    # most recent failures
+```
+
+Fix the underlying error, then re-enable:
+
+```powershell
+pwagent job enable pwagent-monitor
+```
+
+### Two scheduler instances racing
+
+The per-process lock at `~/.pwagent/scheduler/.lock` should prevent this, but if you see two `pwagent scheduler start` PIDs:
+
+```powershell
+pwagent scheduler stop             # graceful
+# wait 5 seconds
+pwagent scheduler start
+```
+
+If `stop` doesn't work, the lock might be stale:
+
+```powershell
+del "$env:USERPROFILE\.pwagent\scheduler\.lock"
+pwagent scheduler start
+```
+
+## Runtime
+
+### `heal: refusing to spawn — no stamp for triage run X`
+
+You're trying to heal something triage hasn't been stamped for. Run:
+
+```powershell
+pwagent review                     # stamp the verdict
+pwagent run heal --from-triage X   # now it works
+```
+
+### `tool.error: binary not allowlisted: <cmd>`
+
+The agent tried to run a binary that's not on the sandbox allowlist. Either:
+
+1. The agent picked the wrong tool — re-prompt with hints.
+2. You genuinely need the binary — add it to [`cli/src/runtime/tools/bashAllowlist.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/runtime/tools/bashAllowlist.ts) and rebuild. Be careful.
+
+### `tool.error: path outside cwd: /etc/hosts`
+
+The agent tried to access a path outside `cwd` or `~/.pwagent/`. The sandbox refuses. There's no escape hatch. If you're operating on system files, do it manually outside pwagent.
+
+### `idle timeout: session closed after 300s`
+
+The SDK session didn't make progress for 5 minutes. Usually:
+
+- Model picked a wrong tool repeatedly and got stuck
+- Tool returned huge output (>200 KB) and the model got confused
+- Your network dropped
+
+```powershell
+pwagent run triage --idle-timeout-s 600 --run-id X     # double the timeout
+```
+
+If the timeout doesn't help, run with `--verbose` to see the SDK's state machine.
+
+## Docs site
+
+### `Cannot find module 'next'` when starting docs
+
+```powershell
+cd D:\gith\pwagent
+npm install                        # docs is a workspace; root install covers it
+npm run dev:docs
+```
+
+### Docs at 7338 returns 404 for every page
+
+You started `next start` without building first.
+
+```powershell
+npm run build:docs
+npm run dev:docs           # use dev, or:
+cd docs && npm run start   # use the production server
+```
+
+## Audit log
+
+### `events.jsonl` is huge
+
+Set rotation in `config.json`:
+
+```jsonc
+{
+  "audit": {
+    "retentionDays": 90,
+    "rotateAtMb": 50
+  }
+}
+```
+
+Or compact manually (preserves the latest N events):
+
+```powershell
+pwagent audit export --since 30d --format jsonl -o audit-30d.jsonl
+# move audit-30d.jsonl → events.jsonl after backup
+```
+
+## Still stuck
+
+`pwagent doctor --verbose` dumps every probe step to stderr. Open an issue with that output and a description of what you ran.

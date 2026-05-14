@@ -1,0 +1,86 @@
+---
+title: Initial Configuration
+---
+
+# Initial Configuration
+
+User state lives at `~/.pwagent/`. On Windows that's `C:\Users\<you>\.pwagent\`.
+
+## The directory layout
+
+```
+~/.pwagent/
+├── config.json              ← main config (zod-validated, atomic writes)
+├── scheduler/
+│   ├── pwagent-monitor.json
+│   ├── pwagent-coverage-nightly.json
+│   ├── pwagent-report-weekly.json
+│   └── pwagent-learner-nightly.json
+├── logs/
+│   ├── scheduler/
+│   │   ├── <id>.log         ← human-readable
+│   │   └── <id>.jsonl       ← machine-readable lifecycle events
+│   └── runs/
+│       └── <run-id>.log
+├── audit/
+│   └── events.jsonl         ← append-only audit stream
+├── portal/
+│   └── secret               ← per-install bearer secret (chmod 600)
+└── casting/
+    └── registry.json        ← opt-in agent persona registry
+```
+
+## Bootstrap interactively
+
+```powershell
+pwagent init
+```
+
+Prompts:
+
+- **Default model** — `claude-sonnet-4.5` (recommended), `claude-haiku-4-5`, `claude-opus-4-7`, `gpt-4o`
+- **ADO organisation** — e.g. `contoso`
+- **ADO project** — e.g. `Engineering`
+- **Default GitHub repo** — e.g. `microsoft/playwright-tests`
+- **Scheduler enabled?** — defaults to false (jobs ship `enabled: false`)
+
+Writes `~/.pwagent/config.json` atomically (write tmp + rename) so a crash mid-init never leaves a half-written config.
+
+`pwagent init --yes` accepts every default without prompting.
+
+## Bootstrap manually
+
+```powershell
+copy pwagent.config.example.json "$env:USERPROFILE\.pwagent\config.json"
+notepad "$env:USERPROFILE\.pwagent\config.json"
+```
+
+The example config is committed at the repo root: [`pwagent.config.example.json`](https://github.com/microsoft/pwagent/blob/main/pwagent.config.example.json).
+
+## Editing later
+
+Three paths:
+
+```powershell
+pwagent config view                                # print full config
+pwagent config get providers.copilot.model         # print one field
+pwagent config set providers.copilot.model claude-haiku-4-5
+pwagent config path                                # print path
+```
+
+Or use the portal: open `http://127.0.0.1:7337/config`. The portal renders the config as a form with per-field zod validation and a **diff preview** before saving (PT4 feature shipped in v0.4).
+
+## What lives where
+
+| File | Mutable by | Read by | Hot-reloaded? |
+|---|---|---|---|
+| `config.json` | `pwagent init`, `pwagent config set`, portal `/config` | every `pwagent run`, scheduler, portal | No — restart scheduler / re-run command |
+| `scheduler/*.json` | `pwagent job add`, `pwagent job enable/disable`, portal `/jobs` | scheduler | **Yes** — `fs.watch` reloads on file change |
+| `logs/scheduler/<id>.jsonl` | scheduler | portal SSE bridge | streamed |
+| `audit/events.jsonl` | every CLI sub-command | portal `/audit` viewer + `pwagent audit tail` | streamed |
+| `portal/secret` | first portal start (chmod 600) | portal middleware | no |
+| `casting/registry.json` | `pwagent casting *` (opt-in) | runtime if enabled | no |
+
+## Next
+
+See [Configuration](/configuration) for the full zod schema and every field's meaning.

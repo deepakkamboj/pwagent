@@ -1,0 +1,111 @@
+---
+title: Agents
+---
+
+import { Cards, Card } from '../../components/Cards';
+import { AgentTable } from '../../components/AgentTable';
+import { Compass, Stethoscope, Wrench, Pen, Map, Search, FileText, CheckCircle2, KeyRound, ClipboardCheck } from 'lucide-react';
+
+# Agents
+
+pwagent ships **10 specialist agents**. Each is a Markdown charter — identity, responsibilities, boundaries, tools, model — that lives in `cli/src/content/agents/<name>/charter.md` and resolves through the [override chain](/architecture/override-chain).
+
+## The roster
+
+<AgentTable
+  agents={[
+    { name: 'supervisor', role: 'Top-level router', inputs: 'free-text user turn', outputs: 'delegated specialist run', model: 'claude-sonnet-4.5' },
+    { name: 'triage', role: 'Failure classifier', inputs: 'run id / artifact', outputs: 'verdict + confidence', model: 'claude-sonnet-4.5' },
+    { name: 'heal', role: 'Patch a failing test or product bug', inputs: 'stamped triage verdict', outputs: 'PR + diff', model: 'claude-sonnet-4.5' },
+    { name: 'generate', role: 'Author new tests', inputs: 'scenario or coverage gap', outputs: 'new .spec.ts files', model: 'claude-sonnet-4.5' },
+    { name: 'plan', role: 'Build a fix plan', inputs: 'failures.json / gap report', outputs: 'ordered task list', model: 'claude-sonnet-4.5' },
+    { name: 'scenario', role: 'Coverage analyzer', inputs: 'src/ + tests/', outputs: 'ScenarioGap rows', model: 'claude-sonnet-4.5' },
+    { name: 'report', role: 'Weekly + ad-hoc reports', inputs: 'audit + logs', outputs: 'Markdown + HTML', model: 'claude-haiku-4-5' },
+    { name: 'validate', role: 'Run a test twice via npx playwright test', inputs: '.spec.ts path', outputs: 'pass twice / pass once / fail twice', model: 'claude-haiku-4-5' },
+    { name: 'auth', role: 'Auth-flow specialist', inputs: 'storage state / role config', outputs: 'storage state JSON or .ts setup', model: 'claude-sonnet-4.5' },
+    { name: 'review', role: 'HITL gate', inputs: 'unstamped verdict', outputs: 'stamp event in audit log', model: 'claude-haiku-4-5' },
+  ]}
+/>
+
+## Why ten, not fifty
+
+The v0.3 simplification cut the roster from 24 down to 10. The criteria for keeping an agent:
+
+1. **Distinct boundary** — its responsibilities don't overlap with another.
+2. **Distinct tooling** — it needs a different tool set or model preference.
+3. **Common enough** — it's invoked at least once per week per typical user.
+
+Agents that didn't meet all three got merged. For example `triage-ado` and `triage-github` were merged into `triage` because they overlap on `triage` semantics and the model can branch on cwd. `report-weekly` and `report-quarterly` merged into `report` because they only differ in the time window argument.
+
+## How charters compose
+
+Each charter is a single Markdown file with stable section headers. The coordinator parses them with `gray-matter` for frontmatter (`name:`, `description:`) and string-splits for the rest.
+
+```markdown
+---
+name: triage
+description: Classify a Playwright failure into ProductBug / TestCodeBug / Environment / Inconclusive.
+---
+
+# Triage
+
+## Identity
+- **Role:** Failure triage
+- **Project:** pwagent
+
+## Responsibilities
+- Read the failure artifact (trace, screenshot, console log)
+- Emit a verdict + confidence + brief rationale
+- ...
+
+## Boundaries
+- You do NOT patch code. That's the heal agent.
+
+## Tools
+- read, grep, bash (npx playwright show-trace)
+
+## Model
+- Preferred: claude-sonnet-4.5
+```
+
+## Browsing them in the CLI
+
+```powershell
+pwagent agents list                    # one line per agent
+pwagent agents show triage              # full charter
+pwagent agents show triage --source     # which override layer won
+pwagent agents show triage --raw        # without rendering frontmatter
+pwagent agents add ./my-custom.md       # workspace override
+```
+
+## Browsing them in the portal
+
+Open `http://127.0.0.1:7337/agents`. The page is server-rendered from `cli/dist/content/agents/*/charter.md`. Each card links to its full charter.
+
+## Reviewer gates
+
+Some agents refuse to spawn without a stamp from a predecessor:
+
+| Agent | Requires |
+|---|---|
+| `heal` | A stamped `triage` verdict |
+| `generate` | (none — can spawn freely) |
+| `validate` | (none — runs `playwright test` directly) |
+| `plan` | A `triage` or `scenario` artifact |
+
+These are declared in `routing.md` under `## Gates`. The coordinator enforces them at spawn time, refusing the call with a structured error.
+
+## Read individual charters
+
+<Cards cols={2}>
+  <Card icon={<Compass />} title="Supervisor" href="/agents/supervisor">Top-level router</Card>
+  <Card icon={<Stethoscope />} title="Triage" href="/agents/triage">Failure classifier</Card>
+  <Card icon={<Wrench />} title="Heal" href="/agents/heal">Patch + PR</Card>
+  <Card icon={<Pen />} title="Generate" href="/agents/generate">Author new tests</Card>
+  <Card icon={<Map />} title="Plan" href="/agents/plan">Build a fix plan</Card>
+  <Card icon={<Search />} title="Scenario" href="/agents/scenario">Coverage analyzer</Card>
+  <Card icon={<FileText />} title="Report" href="/agents/report">Weekly + ad-hoc reports</Card>
+  <Card icon={<CheckCircle2 />} title="Validate" href="/agents/validate">Run a test twice</Card>
+  <Card icon={<KeyRound />} title="Auth" href="/agents/auth">Auth-flow specialist</Card>
+  <Card icon={<ClipboardCheck />} title="Review" href="/agents/review">HITL gate</Card>
+</Cards>

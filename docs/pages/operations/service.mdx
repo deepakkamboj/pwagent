@@ -1,0 +1,124 @@
+---
+title: Service Installer
+---
+
+# Service Installer
+
+`pwagent service install` registers the scheduler with the OS service manager so it survives reboots, runs without a logged-in terminal, and shows up in standard OS dashboards.
+
+## Install
+
+```powershell
+pwagent service install            # interactive; asks for confirmation
+pwagent service install --yes      # non-interactive
+```
+
+The installer writes a platform-native service definition that runs `pwagent scheduler start --daemon`.
+
+## Per-platform mechanism
+
+### Windows — Task Scheduler
+
+Writes an XML at `%TEMP%\pwagent.xml` and calls:
+
+```powershell
+schtasks /Create /TN "pwagent-scheduler" /XML "$env:TEMP\pwagent.xml" /F
+```
+
+Trigger: at user logon + every 1 minute (the in-process tick handles sub-minute timing). The task runs as the current user with `LimitedRunTime` disabled.
+
+### macOS — launchd
+
+Writes a plist at `~/Library/LaunchAgents/com.microsoft.pwagent.plist` and calls:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.microsoft.pwagent.plist
+```
+
+Trigger: `RunAtLoad: true` + `KeepAlive: true`. launchd respawns on crash.
+
+### Linux — systemd user unit
+
+Writes a unit at `~/.config/systemd/user/pwagent.service` and calls:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now pwagent.service
+```
+
+Trigger: `Type=simple` + `Restart=always`. No root needed — it's a user unit.
+
+## Verifying
+
+```powershell
+pwagent service status
+```
+
+Sample output:
+
+```
+service: pwagent-scheduler
+platform: windows (Task Scheduler)
+state: running
+pid: 18472
+last started: 2026-05-13 09:14:22 +07:00
+log: ~/.pwagent/logs/scheduler/main.log
+```
+
+## Uninstall
+
+```powershell
+pwagent service uninstall          # interactive
+pwagent service uninstall --yes
+```
+
+Removes the service registration but **does not** delete `~/.pwagent/` data. The scheduler stops; you can restart it foreground with `pwagent scheduler start`.
+
+## Why not a system-level service
+
+| Concern | User-level | System-level |
+|---|---|---|
+| Requires admin / root | no | yes |
+| Survives user logout (Windows) | no | yes |
+| Has access to user's `gh` keychain | yes | needs explicit credential plumbing |
+| Has access to `~/.pwagent/` | yes | needs path config |
+| Sandbox / lockdown easy | hard | easier |
+| Default for `pwagent service install` | ✓ | not supported in v0.4 |
+
+We chose user-level because:
+
+1. The gh keychain is per-user. A system service can't trivially read it.
+2. `~/.pwagent/` is per-user. Locking down which user the service runs as is the same problem as the gh keychain.
+3. Most users want this for "keep running while I'm logged in", which user-level handles cleanly.
+
+System-level (Windows Services, root systemd) is technically possible but out of scope for v0.4. If you need it for a server install, file an issue with the use case.
+
+## Logs
+
+```powershell
+pwagent service status              # state + log paths
+type ~/.pwagent/logs/scheduler/main.log   # human-readable
+```
+
+The service's stdout/stderr is captured to `~/.pwagent/logs/scheduler/main.log` and rotated daily. Per-job event JSONL files (`<id>.jsonl`) live under the same directory.
+
+## Updating
+
+When you `npm update -g @pwagent/cli` (or pull a new build of this checkout), the registered service points at the new binary automatically — there's no path baked into the service definition that won't resolve. The next service restart picks up the new code.
+
+To force a restart:
+
+```powershell
+# Windows
+schtasks /End   /TN pwagent-scheduler
+schtasks /Run   /TN pwagent-scheduler
+
+# macOS
+launchctl unload ~/Library/LaunchAgents/com.microsoft.pwagent.plist
+launchctl load   ~/Library/LaunchAgents/com.microsoft.pwagent.plist
+
+# Linux
+systemctl --user restart pwagent.service
+```
+
+Or simply `pwagent service uninstall && pwagent service install --yes`.

@@ -1,0 +1,207 @@
+---
+title: Contributing
+---
+
+# Contributing
+
+How to extend pwagent: charters, skills, prereqs, scheduler jobs, portal pages, docs pages.
+
+## Dev workflow
+
+```powershell
+# CLI
+cd D:\gith\pwagent\cli
+npm run dev           # tsx src/index.ts -- <args>
+npm run typecheck
+npm run lint
+npm test
+npm test -- --watch
+
+# Portal
+cd D:\gith\pwagent\portal
+npm run dev           # http://127.0.0.1:7337
+npm run build
+npm run typecheck
+
+# Docs
+cd D:\gith\pwagent\docs
+npm run dev           # http://127.0.0.1:7338
+npm run build
+npm run typecheck
+```
+
+Or from the root:
+
+```powershell
+npm run dev:portal
+npm run dev:docs
+npm test
+npm run lint
+npm run typecheck
+```
+
+## Adding an agent
+
+1. Create `cli/src/content/agents/<name>/charter.md`:
+   ```markdown
+   ---
+   name: <name>
+   description: One-sentence description used by skill-aware routing.
+   ---
+
+   # <Name>
+
+   ## Identity
+   - **Role:** ...
+   - **Project:** pwagent
+
+   ## Responsibilities
+   - ...
+
+   ## Boundaries
+   - You do NOT ...
+
+   ## Tools
+   - read, grep, bash
+
+   ## Model
+   - Preferred: claude-sonnet-4.5
+   ```
+
+2. Add a row to `cli/src/content/routing.md` so the supervisor knows when to delegate.
+
+3. (Optional) Add reviewer gates: `| heal-followup | <name> | requires: <name>-stamp |`.
+
+4. `npm run build:cli`. `pwagent agents list` shows it.
+
+5. Add a docs page at `docs/pages/agents/<name>.mdx` and link it from `docs/pages/agents/_meta.ts` + `docs/pages/agents/index.mdx`.
+
+6. Add a vitest covering the charter shape in `cli/tests/agents.test.ts`.
+
+## Adding a skill
+
+1. Drop a `*.md` file into the appropriate pack under [`cli/src/content/skills/`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/skills/).
+2. Include frontmatter:
+   ```yaml
+   ---
+   name: my-skill
+   description: One-line summary; the coordinator uses this for skill-aware spawn.
+   ---
+   ```
+3. `npm run build:cli`. `pwagent skills list` should show it.
+
+For Squad-shape (folder with `SKILL.md`):
+
+```
+cli/src/content/skills/my-pack/SKILL.md
+```
+
+The pack is the parent directory name.
+
+## Adding a prereq
+
+Edit [`cli/src/prereqs/matrix.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/prereqs/matrix.ts):
+
+```ts
+{
+  id: 'docker',
+  label: 'Docker',
+  reason: 'Used by the e2e container-orchestration skill',
+  tier: 'optional',
+  detect: { kind: 'exec', cmd: 'docker', args: ['--version'] },
+  installers: {
+    winget: ['Docker.DockerDesktop'],
+    brew: ['--cask', 'docker'],
+    apt: ['docker.io'],
+  },
+  unlocks: ['skill:e2e/docker'],
+},
+```
+
+Tests in [`cli/tests/prereqs.test.ts`](https://github.com/microsoft/pwagent/blob/main/cli/tests/prereqs.test.ts) catch incomplete shapes.
+
+## Adding a scheduler job
+
+Create the spec file at `cli/src/content/scheduler/<id>.json`:
+
+```jsonc
+{
+  "id": "<id>",
+  "description": "What it does",
+  "enabled": false,
+  "schedule": { "type": "interval", "minutes": 15 },
+  "command": "pwagent <whatever>",
+  "maxRunSeconds": 300,
+  "retry": { "onExitCodes": [1, 124], "maxAttempts": 2, "backoffSeconds": 30 },
+  "disableAfterConsecutiveFailures": 5,
+  "logs":   { "path": "~/.pwagent/logs/scheduler/<id>.log" },
+  "events": { "path": "~/.pwagent/logs/scheduler/<id>.jsonl" }
+}
+```
+
+`npm run build:cli` copies it into `dist/content/scheduler/`, from where `pwagent init` seeds it into `~/.pwagent/scheduler/`.
+
+## Adding a portal page
+
+Next.js App Router — create the file structure:
+
+```
+portal/app/my-page/
+├── page.tsx              ← server component, default export
+├── _actions.ts           ← (optional) Server Actions
+└── _components/
+    └── MyClient.tsx      ← (optional) 'use client' components
+```
+
+Then add it to the sidebar at [`portal/components/sidebar.tsx`](https://github.com/microsoft/pwagent/blob/main/portal/components/sidebar.tsx):
+
+```ts
+const NAV: NavItem[] = [
+  // ...
+  { href: '/my-page', label: 'My Page', icon: MyIcon },
+];
+```
+
+## Adding a docs page
+
+Create the `.mdx` file:
+
+```
+docs/pages/my-section/my-page.mdx
+```
+
+Add it to `docs/pages/my-section/_meta.ts` so it appears in the sidebar.
+
+## Charter authoring contract
+
+Common pitfalls:
+
+| Pitfall | Why it bites | Fix |
+|---|---|---|
+| Renaming the `## Members` header in `team.md` | GitHub workflows hard-parse this header | Keep it exactly `## Members` |
+| Writing behaviour into the master prompt instead of the charter | Charters are reloaded per spawn; master-prompt changes affect the coordinator only | Put agent rules in `charter.md` |
+| Forgetting `## Boundaries` | Agents will happily do each other's jobs | Add explicit "You do NOT do X" |
+| Skipping the routing.md entry | Coordinator falls back to "best guess" routing | Add a routing row for every new agent |
+| Overriding Scribe or Ralph | They're framework-owned | Don't write charters for them beyond what ships |
+| Long sequential spawns | Wastes wall-clock time | Spawn independent agents in ONE turn |
+
+## Code style
+
+- TypeScript strict, no `any` unless commented why.
+- 2-space indent in `.ts`/`.tsx`; tab where existing files use it.
+- ESLint: `npm run lint`.
+- Vitest: each new module gets at least a smoke test in `cli/tests/`.
+- No comments that re-state the code; comment **why**, not what.
+
+## Submitting
+
+```powershell
+git checkout -b feat/<short-description>
+# ... your changes ...
+npm run build && npm test && npm run lint && npm run typecheck
+git commit -m "feat: <what>"
+git push -u origin feat/<short-description>
+gh pr create --fill
+```
+
+PR template asks: what changed, why, what tests cover it, any breaking changes. CI runs the full vitest suite + builds all three workspaces.

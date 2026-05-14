@@ -1,0 +1,91 @@
+---
+title: Installation
+---
+
+# Installation
+
+pwagent is an npm workspaces monorepo. **One `npm install` at the root covers `cli/`, `portal/`, and `docs/`.**
+
+## 1. Clone or download
+
+```powershell
+git clone https://github.com/microsoft/pwagent.git D:\gith\pwagent
+cd D:\gith\pwagent
+```
+
+## 2. Install all workspaces in one shot
+
+```powershell
+npm install
+```
+
+The root [`package.json`](https://github.com/microsoft/pwagent/blob/main/package.json) declares `workspaces: ["cli", "portal", "docs"]`. A single install:
+
+- Hoists shared dependencies into `node_modules/`
+- Wires up symlinks so `@pwagent/cli` resolves `@pwagent/portal` and vice versa
+- Runs each workspace's `postinstall` step in dependency order
+
+## 3. Build the CLI + portal + docs
+
+```powershell
+npm run build
+```
+
+This runs the `build` script in each workspace that defines one:
+
+| Workspace | Build step | Output |
+|---|---|---|
+| `cli/` | `tsc` + `copy-content.mjs` | `cli/dist/index.js` + `cli/dist/content/` |
+| `portal/` | `next build` | `portal/.next/` |
+| `docs/` | `next build` | `docs/.next/` |
+
+Per-workspace builds:
+
+```powershell
+npm run build:cli       # CLI only — ~5 seconds
+npm run build:portal    # Portal only — ~25 seconds
+npm run build:docs      # Docs only — ~20 seconds
+```
+
+## 4. Link the CLI globally
+
+So `pwagent` is callable from any directory:
+
+```powershell
+npm link --workspace cli
+pwagent --version       # 0.4.0
+```
+
+Verify the link points at your local checkout:
+
+```powershell
+where.exe pwagent       # e.g. C:\Users\<you>\AppData\Roaming\npm\pwagent.cmd
+```
+
+## 5. Bootstrap user state
+
+```powershell
+copy pwagent.config.example.json "$env:USERPROFILE\.pwagent\config.json"
+mkdir "$env:USERPROFILE\.pwagent\scheduler"
+mkdir "$env:USERPROFILE\.pwagent\logs"
+mkdir "$env:USERPROFILE\.pwagent\audit"
+```
+
+`pwagent init` does steps 5–7 interactively if you'd rather not run them by hand.
+
+## Verifying
+
+```powershell
+pwagent doctor
+```
+
+You should see `Ready.` and a full features matrix. If any prereq is missing, jump to [Prerequisites](/getting-started/prerequisites).
+
+## Uninstall
+
+```powershell
+npm unlink -g pwagent
+rmdir /S /Q "$env:USERPROFILE\.pwagent"
+```
+
+That removes the binary symlink and all user state. The clone in `D:\gith\pwagent` can be deleted with a normal `rmdir`. There are no daemons, no registry entries, no Copilot plugin to unregister.

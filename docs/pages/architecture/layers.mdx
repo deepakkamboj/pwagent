@@ -1,0 +1,86 @@
+---
+title: Three Layers
+---
+
+# Three Layers
+
+pwagent ships as a monorepo with **three independent layers** under npm workspaces. Each functions alone; removing one leaves the others working.
+
+| Package | Path | What it is | Default port |
+|---|---|---|---|
+| `@pwagent/cli` | `cli/` | The CLI binary, agent runtime, in-process scheduler | n/a |
+| `@pwagent/portal` | `portal/` | Local Next.js 15 dashboard | 7337 |
+| `@pwagent/docs` | `docs/` | This documentation site (Nextra) | 7338 |
+
+The scheduler is **not** a separate package — it runs inside `cli/` as `pwagent scheduler start`. Same process, same logs, same config.
+
+## CLI
+
+The CLI (`@pwagent/cli`) is the heart. It contains:
+
+- **Sub-command router** (`commander.js`) — entry at [`cli/src/index.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/index.ts)
+- **Coordinator + spawner** — [`cli/src/runtime/`](https://github.com/microsoft/pwagent/blob/main/cli/src/runtime/)
+- **Tool sandbox** — read / write / edit / bash / grep, with an allowlist
+- **Provider adapter** — `@github/copilot-sdk` wrapper
+- **Charter + skill loaders** with the four-step override chain
+- **Embedded content** — 10 charters, 60+ skill guides, master prompt, routing/ceremonies/team
+- **Prereq matrix** and detection/install flow
+- **In-process scheduler** with tick loop, locks, JSONL events, hot-reload
+- **Audit writer** (append-only JSONL stream)
+
+The CLI works standalone. You can use it without ever starting the portal or the docs.
+
+## Portal
+
+`@pwagent/portal` is a Next.js 15 App Router app at `127.0.0.1:7337`. It reads the same state files the CLI writes:
+
+- `~/.pwagent/scheduler/*.json` — job specs (form-edit + Server Actions)
+- `~/.pwagent/logs/scheduler/*.jsonl` — lifecycle events (SSE bridge to the browser)
+- `~/.pwagent/audit/events.jsonl` — audit stream (filterable viewer)
+- `~/.pwagent/config.json` — config (form editor with diff preview)
+- `cli/dist/content/agents/*/charter.md` — charters (read-only browser at `/agents`)
+- `cli/dist/content/skills/**/*.md` — skills (read-only browser at `/skills`)
+
+Killing the portal does **not** affect the CLI or the scheduler. The CLI keeps writing events; the portal just isn't there to render them.
+
+See [Portal](/portal) for routes, Server Actions, SSE, auth, and safety.
+
+## Docs
+
+`@pwagent/docs` is this Nextra-powered Next.js site at `127.0.0.1:7338`. It is **fully static** — no filesystem reads, no API routes, no auth. The portal links to it via its `Help` sidebar entry.
+
+You can host the same `docs/` build behind any static-file server in production (S3 + CloudFront, GitHub Pages, an internal nginx, etc.). For local dev / corp-laptop use, `npm run dev:docs` is enough.
+
+## Independence test
+
+Try this sequence — every step should leave the others working:
+
+```powershell
+# CLI alone
+pwagent run triage --example          # ✓ works
+
+# CLI + portal
+pwagent portal start                  # ✓ opens at 7337
+# (CLI still works)
+
+# CLI + portal + docs
+npm run dev:docs                      # ✓ opens at 7338
+# (portal + CLI still work)
+
+# Kill portal
+# (CLI still works, docs still serve)
+
+# Kill docs
+# (CLI + portal still work)
+```
+
+## Why three packages, not one
+
+| Concern | Single-binary cost | Split-packages benefit |
+|---|---|---|
+| Install size | Portal pulls in Next.js (40 MB) + React. Docs pulls in Nextra (15 MB) + Mermaid. | CLI alone is ~3 MB; users who don't want the UI never install it |
+| Build complexity | One mega-build with `tsc` + `next build` + `next build` | Independent build steps; CI can parallelise |
+| Hot reload | A `cli/` change would rebuild the portal too | `cli/src/**/*.ts` change rebuilds CLI only |
+| Update path | Single `npm update` for everything | Same — workspaces still update together |
+
+The split-packages cost is one extra `npm run dev:*` script per layer. We took the trade.

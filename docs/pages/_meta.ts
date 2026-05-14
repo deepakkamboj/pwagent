@@ -1,0 +1,15 @@
+export default {
+  index: 'Home',
+  'getting-started': 'Getting Started',
+  architecture: 'Architecture',
+  agents: 'Agents',
+  skills: 'Skills',
+  cli: 'CLI Reference',
+  portal: 'Portal',
+  scheduler: 'Scheduler',
+  configuration: 'Configuration',
+  squad: 'Squad Design',
+  operations: 'Operations',
+  contributing: 'Contributing',
+  faq: 'FAQ',
+};

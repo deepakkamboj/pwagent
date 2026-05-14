@@ -1,0 +1,56 @@
+---
+title: Routes
+---
+
+# Routes
+
+The portal exposes these App Router routes.
+
+| Route | Purpose | Read source | Write source |
+|---|---|---|---|
+| `/` | Dashboard — active jobs, last 24 h, HITL queue, latest report | scheduler state, audit log, reports dir | — |
+| `/jobs` | Scheduler jobs table with enable/disable + new-job form | `~/.pwagent/scheduler/*.json` | Server Action |
+| `/jobs/[id]` | Job detail — spec viewer + live SSE event tail | `<id>.json` + `<id>.jsonl` (tail) | Server Action |
+| `/agents` | Charter browser (10 cards, read-only) | `cli/dist/content/agents/*/charter.md` | — |
+| `/agents/[name]` | Full charter view with rendered markdown | same | — |
+| `/skills` | Skill browser (60+ guides, grouped by pack) | `cli/dist/content/skills/**/*.md` | — |
+| `/skills/[pack]/[name]` | Full skill view | same | — |
+| `/playwright` | Playwright CLI command reference (codegen, traces, devices) | `cli/dist/content/skills/playwright-cli/*.md` | — |
+| `/audit` | Audit log viewer with type / agent / time filters + export | `~/.pwagent/audit/events.jsonl` | — |
+| `/config` | Form editor for `~/.pwagent/config.json` with diff preview + atomic save | `~/.pwagent/config.json` | Server Action |
+| `/reports` | Weekly + ad-hoc report viewer | `~/.pwagent/reports/*.md`, `*.html` | — |
+| `/runs` | Recent `pwagent run` invocations | audit log filtered to `run.*` | — |
+| `/help` | **Redirects to** `http://127.0.0.1:7338` (this docs site) | — | — |
+
+## API routes
+
+These are HTTP route handlers under `/api/*` — not visited by browsers directly.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/jobs` | GET | List all job specs |
+| `/api/jobs/[id]` | GET | One job's spec + state |
+| `/api/events/jobs/[id]` | GET (text/event-stream) | SSE tail of `<id>.jsonl` |
+| `/api/audit` | GET | Recent audit events (paginated) |
+| `/api/audit/export` | GET | Streamed export — `?since=7d&format=jsonl` |
+| `/api/agents` | GET | List charters with frontmatter |
+| `/api/skills` | GET | List skills with frontmatter |
+| `/api/config` | GET | Current config (sanitised — secrets redacted) |
+| `/api/health` | GET | `{ ok: true, version, uptime }` |
+
+## Server Actions
+
+Server Actions are not routes — they're invoked via `<form action={serverAction}>`. They live alongside the page that uses them:
+
+- `app/jobs/_actions.ts` — `enableJob`, `disableJob`, `fireNow`, `createJob`, `updateJob`, `deleteJob`
+- `app/config/_actions.ts` — `saveConfig`
+- `app/audit/_actions.ts` — `exportAudit`
+- `app/_actions/auth.ts` — `signInWithSecret`, `signOut`
+
+Every Server Action calls `requireWriteAuth(request)` as its first line. See [Auth & Safety](/portal/auth).
+
+## Sidebar
+
+The sidebar (in [`portal/components/sidebar.tsx`](https://github.com/microsoft/pwagent/blob/main/portal/components/sidebar.tsx)) renders top-level routes only. Sub-routes (e.g. `/jobs/<id>`) inherit their parent's active state.
+
+Order: Dashboard, Jobs, Agents, Skills, Playwright CLI, Reports, Audit, Runs, Config, **Help** (last — opens docs at 7338 in a new tab).

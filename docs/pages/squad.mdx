@@ -1,0 +1,74 @@
+---
+title: Squad Design
+---
+
+# Squad Design
+
+pwagent is **Squad's design with our runtime**. This page maps each of the eleven Squad principles to how pwagent provides it, and lists what we deliberately don't adopt.
+
+## What Squad is
+
+[Brady Gaster's Squad](https://github.com/bradygaster/squad) is a multi-agent orchestration framework that runs **inside GitHub Copilot CLI**. It turns a single Copilot session into a team of specialised AI agents that live as Markdown files in your repository.
+
+In one sentence:
+
+> Squad is a *coordinator prompt* + a *filesystem convention* (`.squad/`) + a *CLI* (`@bradygaster/squad-cli`) that lets you describe an AI team in version-controlled Markdown and route work to its members through a Copilot CLI session.
+
+### What Squad is, mechanically
+
+| Layer | What it is | Where it lives |
+|---|---|---|
+| Coordinator prompt | One large agent manifest (`squad.agent.md`) that Copilot CLI loads as the "Squad" agent | `.github/agents/squad.agent.md` |
+| Filesystem state | A `.squad/` directory of Markdown / JSON files | `.squad/` |
+| Per-agent charters | One Markdown file per agent | `.squad/agents/<name>/charter.md` |
+| CLI | `@bradygaster/squad-cli` for init, watch, migration | npm global install |
+| GitHub workflows | Optional Actions that mirror `team.md` into labels | `.github/workflows/squad-*.yml` |
+
+### What Squad is NOT
+
+- **Not a scheduler.** No cron, no daemon, no in-process timer.
+- **Not a code framework.** No SDK, no API. The "code" is Markdown.
+- **Not a hosted service.** Everything runs locally inside your Copilot CLI session.
+- **Not a runtime by itself.** Without Copilot CLI it's inert documentation.
+
+## The eleven principles
+
+pwagent ports each into the binary as a first-class module or filesystem convention.
+
+| # | Squad benefit | How pwagent provides it |
+|---|---|---|
+| 1 | **Charter-as-code** — one Markdown file per agent with stable Identity / Responsibilities / Boundaries / Tools / Model sections | Same format, same paths. `.pwagent/agents/<name>/charter.md` either embedded or overridden. `pwagent agents show <name>` renders one. |
+| 2 | **Routing instead of prompt-stuffing** | `~/.pwagent/routing.md` (or workspace) — coordinator consults the table on every user utterance. |
+| 3 | **Reviewer gates** — declarative QA | A `gates:` table in `routing.md` says which artefacts require which reviewer. Runtime refuses to spawn `heal` without a triage stamp. |
+| 4 | **Persistent identity via casting** | `~/.pwagent/casting/registry.json` — opt-in. Off by default. |
+| 5 | **Append-only memory** with `merge=union` | Same `.gitattributes` snippet. `decisions.md`, `agents/*/history.md`, `log/`, `orchestration-log/` all concat on merge. |
+| 6 | **Ceremonies** — auto-run agendas | `ceremonies.md` declares them; the coordinator runs the agenda when the condition matches. |
+| 7 | **Parallel-by-default execution** | Coordinator spawner takes independent sub-tasks and dispatches them concurrently via `Promise.all` against the Copilot SDK. |
+| 8 | **Response Mode Selection** — Direct / Lightweight / Standard / Full | `pwagent run --mode=light` (or coordinator-chosen). Direct skips spawn; Full runs ceremonies + Scribe. |
+| 9 | **Skills with confidence lifecycle** | Skill-aware spawn injects `read .pwagent/skills/<x>.md before starting`. Confidence in `~/.pwagent/skills/<name>/.confidence`. |
+| 10 | **GitHub integration** | The four `.github/workflows/squad-*.yml` workflows from upstream Squad still parse `## Members` literally from `team.md`. |
+| 11 | **Free Scribe + Ralph** | Built into the binary. Scribe writes to `.pwagent/log/`. Ralph is `pwagent ralph go / status / stop`. |
+
+## What we deliberately don't adopt
+
+| Squad piece | Why we drop it |
+|---|---|
+| The 74 KB upstream `squad.agent.md` coordinator manifest | Embedded as compiled logic inside the binary. No per-turn token cost. Tracked as a reference only — never run as a prompt. |
+| `@bradygaster/squad-cli` as a runtime dependency | `pwagent init` replaces its init / watch / migration commands. We still recognise the `.squad/` filesystem format so workspaces scaffolded by `npx @bradygaster/squad-cli init` work unmodified. |
+| Squad's `@copilot` coding-agent roster member | Out of scope for v1. If needed later, a charter like any other. |
+
+## Three layers of "keep working"
+
+Squad describes three ways an agent team keeps moving without a user typing. pwagent ships equivalents:
+
+| Layer | Squad source | pwagent equivalent |
+|---|---|---|
+| L1 — In-session loop | Ralph built into the coordinator manifest | `pwagent ralph go / status / stop` |
+| L2 — Local watchdog | `npx github:bradygaster/squad watch` | `pwagent scheduler start` |
+| L3 — Cloud heartbeat | `.github/workflows/squad-heartbeat.yml` | Identical workflow, calls `pwagent` instead of opening a Copilot session |
+
+## Compatibility with `.squad/` workspaces
+
+A workspace scaffolded by `npx @bradygaster/squad-cli init` works unmodified — pwagent's loader checks `.squad/agents/<name>/charter.md` as part of the override chain. **`.pwagent/` wins** when both exist, but you don't have to migrate.
+
+That makes pwagent a drop-in for Squad workspaces *and* a path forward for teams who want a runtime that isn't dependent on Copilot CLI.

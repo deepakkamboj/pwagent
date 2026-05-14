@@ -1,0 +1,106 @@
+---
+title: Coordinator Runtime
+---
+
+# Coordinator Runtime
+
+The coordinator is what `pwagent run` *actually does*. It's a TypeScript module — not a 74-KB prompt — that drives each turn.
+
+## What it does, in order
+
+1. **Resolves the charter** through the [override chain](/architecture/override-chain) — workspace `.pwagent/` > `.squad/` > user > embedded.
+2. **Picks the model** — charter's `## Model` block > `config.perAgent.<name>` > `config.providers.copilot.model` > built-in default.
+3. **Filters tools** — only the tools listed in the charter's `## Tools` block are exposed to this session.
+4. **Skill-aware injection** — keyword-scores the user's prompt against every skill's frontmatter `description:`, picks the top N (default 3), and injects `read .pwagent/skills/<x>.md before starting` into the spawn prompt.
+5. **Prepends the master prompt** ([`cli/src/content/master-prompt.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/master-prompt.md)) — the cross-cutting Squad rules: reviewer gates, response modes, parallel-by-default, formatting, audit. **Equivalent to upstream Squad's `squad.agent.md` but compiled in.**
+6. **Opens a Copilot session** — `@github/copilot-sdk` with the assembled system message, the filtered tool list, streaming on, and an idle timeout.
+7. **Runs the tool loop** — every `tool.execution_start` is dispatched to the [tool sandbox](/architecture/tool-sandbox); results flow back into the session.
+8. **Streams the assistant** to stdout (and the audit log) as deltas arrive.
+9. **Emits the result** + any artefacts the agent wrote.
+
+## The `routing.md` table
+
+`pwagent run` without naming an agent (or via `pwagent ralph go`) spawns the **supervisor**, which consults `routing.md` to pick the right specialist. The parser lives at [`cli/src/runtime/routingTable.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/runtime/routingTable.ts).
+
+Sample `routing.md` row:
+
+```markdown
+| If the user mentions... | Route to | Required stamps |
+|---|---|---|
+| "fix this test" / "patch the failure" | heal | triage |
+| "why did this fail" / "classify run NNN" | triage | (none) |
+| "write a test for ..." / "cover ..." | generate | (none) |
+| "scenario gap" / "what's untested" | scenario | (none) |
+| "weekly report" / "summary of failures" | report | (none) |
+```
+
+The `Required stamps` column wires up Squad's **reviewer gates**: the coordinator refuses to spawn `heal` without a stamped triage verdict. See [Operations → HITL Review](/operations/hitl) for the stamp flow.
+
+## Skill-aware injection scoring
+
+The coordinator builds a TF-IDF-ish bag-of-words score across all skill `description:` frontmatter and picks the top N. You can override:
+
+```powershell
+pwagent run heal --skills core/locators,core/fixtures,ado
+```
+
+That replaces the inferred set with an explicit one. Useful when skill matching picks something unrelated.
+
+## Per-agent model override
+
+The charter wins by default:
+
+```markdown
+---
+name: triage
+description: Classify a Playwright failure into ProductBug / TestCodeBug / Environment / Inconclusive.
+---
+
+## Model
+- Preferred: claude-sonnet-4.5
+- Acceptable fallback: claude-haiku-4-5
+```
+
+Override per-invocation:
+
+```powershell
+pwagent run triage --model claude-opus-4-7
+```
+
+Or pin per-agent in `config.json`:
+
+```jsonc
+{
+  "perAgent": {
+    "triage": { "model": "claude-opus-4-7" },
+    "scenario": { "model": "claude-haiku-4-5" }
+  }
+}
+```
+
+## Audit events
+
+Each `pwagent run` emits to `~/.pwagent/audit/events.jsonl`:
+
+```jsonc
+{ "ts": "2026-05-13T12:34:56Z", "type": "run.start",    "agent": "triage", "mode": "standard", "model": "claude-sonnet-4.5", "cwd": "..." }
+{ "ts": "2026-05-13T12:34:58Z", "type": "tool.invoke",  "agent": "triage", "tool": "read",  "args": "..." }
+{ "ts": "2026-05-13T12:35:02Z", "type": "tool.invoke",  "agent": "triage", "tool": "bash",  "args": "..." }
+{ "ts": "2026-05-13T12:35:14Z", "type": "run.complete", "agent": "triage", "exitCode": 0, "durationMs": 18412 }
+```
+
+Lifecycle vocab is fixed: `run.start`, `run.complete`, `run.error`, `tool.invoke`, `tool.error`, `review.stamp`, `scheduler.start`, `scheduler.stop`.
+
+## Dry-run
+
+```powershell
+pwagent run triage --dry-run --run-id 12345
+```
+
+Resolves charter, picks model, filters tools, prints the assembled system message, **does not call the SDK**. Great for debugging skill-aware injection.
+
+```powershell
+pwagent run triage --json --run-id 12345
+```
+
+Emits one JSON line per event instead of streaming markdown. Designed for piping into another process.

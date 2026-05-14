@@ -1,0 +1,186 @@
+---
+title: Sequence Diagrams
+---
+
+# Sequence Diagrams
+
+End-to-end flows for the four core paths.
+
+## Bootstrap — first-time setup on a new machine
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Term as Terminal
+    participant Bin as pwagent binary
+    participant Gh as gh CLI
+    participant SDK as @github/copilot-sdk
+
+    User->>Term: pwagent prereqs --install
+    Term->>Bin: detect each prereq
+    Bin-->>Term: report (node ✓, git ✓, gh ✗, gh-auth ✗, ...)
+    Bin->>Term: prompt: install gh via winget? [Y/n]
+    User->>Term: y
+    Bin->>Term: winget install GitHub.cli
+    Term-->>Bin: ok
+
+    User->>Term: pwagent login
+    Bin->>Gh: gh auth login --web --scopes read:user
+    Gh-->>User: open browser
+    User->>Gh: complete OAuth
+    Gh-->>Bin: token stored in gh keychain
+
+    User->>Term: pwagent init
+    Bin->>User: prompt model + ADO org/project
+    User-->>Bin: claude-sonnet-4.5, contoso, Engineering
+    Bin->>Bin: write ~/.pwagent/config.json (atomic)
+
+    User->>Term: pwagent doctor
+    Bin->>SDK: import; resolve auth via gh
+    SDK-->>Bin: reachable
+    Bin-->>User: Ready. (features matrix)
+```
+
+## Agent invocation — `pwagent run triage`
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as pwagent run
+    participant Coord as Coordinator
+    participant Charter as charter.md (triage)
+    participant Skills as skills/*.md
+    participant SDK as Copilot SDK
+    participant Tools as Tool runner
+    participant Scribe
+
+    User->>CLI: pwagent run triage --run-id 12345
+    CLI->>Coord: dispatch via routing.md
+    Coord->>Coord: pick response mode (Standard)
+    Coord->>Charter: load triage charter
+    Coord->>Skills: skill-aware match → core/flaky-tests.md
+    Coord->>SDK: createSession({ systemMessage: charter + skill, tools, streaming: true })
+
+    SDK-->>Coord: session ready
+    Coord->>SDK: send({ prompt: "classify run 12345" })
+
+    loop tool loop
+        SDK-->>Tools: tool.execution_start(read_file)
+        Tools-->>SDK: result
+        SDK-->>Coord: assistant.message_delta (stream)
+        Coord-->>Scribe: append to log
+    end
+
+    SDK-->>Coord: session.idle
+    Coord-->>User: verdict: ProductBug (confidence 0.82) — needs HITL stamp
+    Coord->>Scribe: save artifact + transcript
+```
+
+## Scheduler tick
+
+```mermaid
+sequenceDiagram
+    participant Loop as pwagent scheduler<br/>(in-process)
+    participant Store as state.json
+    participant Lock as <id>.lock
+    participant Disp as Dispatcher
+    participant CLI as pwagent (same binary)
+    participant Events as <id>.jsonl
+
+    loop every 1s
+        Loop->>Store: which jobs are due?
+        alt one or more due
+            Loop->>Lock: acquire <pwagent-monitor>.lock
+            Loop->>Events: agent_start
+            Loop->>Disp: spawn pwagent monitor --once
+            Disp->>CLI: child_process.spawn
+            CLI-->>Disp: exit code + stdout
+            alt success
+                Disp->>Events: agent_end (ok)
+                Loop->>Store: update lastRunAt + nextDueAt
+            else failure
+                Disp->>Events: agent_error
+                Loop->>Store: ++consecutiveFailures
+                alt failures >= disableAfter
+                    Loop->>Store: set enabled=false
+                end
+            end
+            Loop->>Lock: release
+        end
+    end
+```
+
+## Portal — browsing agents at `/agents`
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant Next as Next.js SSR
+    participant FS as filesystem
+    participant Dist as ../dist/content/agents/
+
+    User->>Browser: GET http://127.0.0.1:7337/agents
+    Browser->>Next: request /agents
+    Next->>FS: stat candidate roots
+    FS-->>Next: <repo>/dist/content/agents exists
+    Next->>FS: readdir + read each charter.md
+    FS-->>Next: 10 charters with frontmatter
+    Next->>Next: parse with gray-matter, sort
+    Next-->>Browser: SSR HTML (card per charter)
+    Browser-->>User: render with sidebar + header + footer
+```
+
+## Portal — live event tail (SSE)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant Next as Next.js<br/>(route handler)
+    participant Watch as chokidar
+    participant FS as ~/.pwagent/logs/scheduler/<id>.jsonl
+
+    User->>Browser: open /jobs/pwagent-monitor
+    Browser->>Next: GET /api/events/jobs/pwagent-monitor (text/event-stream)
+    Next->>Watch: subscribe to <id>.jsonl tail
+    Watch->>FS: open with fs.watch + tail-on-append
+    loop while EventSource is open
+        FS-->>Watch: new line written by scheduler
+        Watch-->>Next: line
+        Next-->>Browser: data: {"ts": "...", ...}\n\n
+        Browser-->>User: render new event in the page
+    end
+    Browser->>Next: navigate away
+    Next->>Watch: unsubscribe
+    Watch->>FS: close
+```
+
+## Bearer-auth Server Action (v0.4)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant Next as Server Action
+    participant Auth as requireWriteAuth()
+    participant Cookie
+    participant FS as ~/.pwagent/portal/secret
+
+    User->>Browser: click "Disable job"
+    Browser->>Next: POST Server Action
+    Next->>Auth: requireWriteAuth(request)
+    Auth->>Cookie: read pwagent_session
+    Cookie-->>Auth: <hmac value>
+    Auth->>FS: read secret (chmod 600)
+    FS-->>Auth: <secret>
+    Auth->>Auth: hmac compare (timing-safe)
+    alt match
+        Auth-->>Next: ok
+        Next->>FS: rename .json tmp → final (atomic write)
+        Next-->>Browser: { ok: true }
+    else mismatch
+        Auth-->>Next: 401
+        Next-->>Browser: { error: "unauthorized" }
+    end
+```

@@ -1,0 +1,68 @@
+---
+title: Help / Docs Link
+---
+
+# Help / Docs Link
+
+The portal sidebar has a **Help** entry that opens this docs site in a new tab.
+
+## What it does
+
+Clicking **Help** in the portal's sidebar opens the docs at the same host as the portal but on port **7338** — in a new tab.
+
+```
+http://127.0.0.1:7337/jobs                       ← portal (port 7337)
+http://127.0.0.1:7338/                            ← docs (port 7338) opened from "Help"
+```
+
+The link is **dynamic**: it reads `window.location.hostname` and substitutes `:7337` → `:7338`. So if you accessed the portal at `localhost:7337`, you'll get `localhost:7338`; if you accessed it at `192.168.1.42:7337` (via `--bind-all`), you'll get `192.168.1.42:7338`.
+
+## Why a new tab, not embedded
+
+| Option | Pros | Cons |
+|---|---|---|
+| Iframe inside `/help` | One window | Nextra navigation breaks inside iframe; copy-link is wrong |
+| Reverse-proxy at `/help/*` → docs | One window | Adds a proxy layer; complicates docs base path |
+| **Open in new tab** (chosen) | Zero coupling, docs run standalone | One extra browser tab |
+
+We picked **new tab** because the docs are designed to stand alone. The portal isn't a strict prerequisite — you can read the docs without the portal running and vice-versa.
+
+## Server-side check that docs are reachable
+
+Before showing the Help link, the sidebar pings `http://127.0.0.1:7338/api/health` (a no-op endpoint Nextra exposes). If the docs aren't running, the link is dimmed with a tooltip:
+
+```
+Help (docs not running — run: npm run dev:docs)
+```
+
+If you don't want this probe (e.g. on a CI build where the docs aren't running and you don't care), set `PWAGENT_PORTAL_HIDE_HELP=1`.
+
+## What if I host docs elsewhere
+
+In production you may host the docs at a stable URL (intranet, GitHub Pages):
+
+```jsonc
+{
+  "portal": {
+    "helpUrl": "https://pwagent.docs.contoso.com"
+  }
+}
+```
+
+Set in `~/.pwagent/config.json`. The sidebar uses this URL instead of deriving from `window.location.hostname`. Health probe is skipped for absolute URLs (we trust them).
+
+## Implementation
+
+The Help nav item is the last entry in [`portal/components/sidebar.tsx`](https://github.com/microsoft/pwagent/blob/main/portal/components/sidebar.tsx):
+
+```tsx
+const NAV: NavItem[] = [
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/jobs', label: 'Jobs', icon: Calendar },
+  // ... other entries
+  { href: '/config', label: 'Config', icon: Settings },
+  { href: 'help', label: 'Help', icon: HelpCircle, external: true },   // ← last
+];
+```
+
+`external: true` tells the sidebar renderer to compute the docs URL client-side and open in a new tab with `rel="noopener noreferrer"`.

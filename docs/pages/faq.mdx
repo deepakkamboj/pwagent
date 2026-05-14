@@ -1,0 +1,106 @@
+---
+title: FAQ
+---
+
+# FAQ
+
+## What does "pwagent" stand for?
+
+**pw agent** — short for **"playwright agent"**. The name follows the pattern of other Microsoft / Playwright-adjacent CLIs that abbreviate to two letters + suffix (`pw` mirrors the `playwright` binary's own `pw`-prefixed package names). It's pronounced "pee-double-you-agent" — never "pwig-agent".
+
+## Where does pwagent run? Which IDE / tool integrations?
+
+pwagent is a **standalone Node CLI**. It does not require — but is compatible with — these surfaces:
+
+| Surface | Status | How it works |
+|---|---|---|
+| **Standalone terminal** | ✓ first-class | `pwagent <args>` from any shell — PowerShell, bash, zsh, Windows Terminal |
+| **Claude Code CLI** | ✓ works as a shell-out | Run `pwagent run triage --run-id X` from inside a Claude Code session like any other CLI. Claude Code's bash tool calls it. pwagent does not depend on Claude Code; it runs anywhere Node 22+ runs |
+| **Claude Code VS Code extension** | ✓ works as a shell-out | Same as above — the extension's terminal can invoke `pwagent` directly. No special integration needed |
+| **GitHub Copilot CLI** | ✓ works as a shell-out | Copilot CLI's shell can invoke `pwagent`. Independent: pwagent uses `@github/copilot-sdk` (the SDK, not the CLI) for its own model calls. The two coexist without conflict |
+| **GitHub Copilot VS Code extension** | ✓ works as a shell-out | The extension's integrated terminal runs `pwagent` like any other binary. The extension itself doesn't drive pwagent — they're peers, not nested |
+| **VS Code (any)** | ✓ tasks + terminal | Add `pwagent run` commands to `.vscode/tasks.json`. Or invoke from the integrated terminal |
+| **Cursor, Windsurf, other forks** | ✓ shell-out | Same as VS Code — pwagent is a regular CLI |
+| **CI runners (GitHub Actions, ADO Pipelines)** | ✓ first-class | `pwagent` runs on any CI runner with Node 22 + `gh auth` configured. Use `GH_TOKEN` env var for non-interactive auth |
+
+**Key principle:** pwagent is **not** an IDE plugin, **not** a VS Code extension, **not** a Copilot extension. It's a binary you run. Anything that can run a binary can run pwagent. We deliberately keep it that way to avoid lock-in.
+
+A **thin VS Code chat wrapper** is on the roadmap (30-line shim that surfaces `pwagent` inside the chat panel) but is not part of v0.4. The CLI works fully without it.
+
+## Why GitHub Copilot SDK and not Anthropic / OpenAI / Bedrock directly?
+
+Three reasons:
+
+1. **One auth surface.** `gh auth login` once and every pwagent call works. No `OPENAI_API_KEY`, no `ANTHROPIC_API_KEY`, no `BEDROCK_*`.
+2. **Microsoft-internal license.** The Copilot subscription covers model calls — no per-token billing to track.
+3. **Single failure mode.** Multi-provider SDKs add fallback logic, retries across providers, rate-limit handling per provider. We don't need any of that.
+
+The trade is: pwagent doesn't work without a Copilot subscription. We accept that. See the [provider note](https://github.com/microsoft/pwagent#provider-note--what-we-use-what-we-dont).
+
+## Why a separate portal and docs instead of one app?
+
+Each layer has a different deploy model:
+
+- **CLI** — install as a binary, run anywhere.
+- **Portal** — local dev tool, port 7337, loopback-only, mutates state.
+- **Docs** — fully static site, port 7338, can be hosted as static HTML anywhere.
+
+Merging them would force every install to pull in Next.js even if the user only wanted the CLI. Splitting them keeps the CLI install at ~3 MB and lets you host the docs separately (intranet, GitHub Pages, S3) without dragging the portal along.
+
+## How is pwagent different from Squad?
+
+pwagent is **Squad's design ported to a standalone runtime**. We keep:
+
+- The Markdown charter format
+- The filesystem layout (`.squad/`, `.pwagent/`)
+- The eleven principles (charter-as-code, routing, gates, ceremonies, …)
+- The four-step override chain
+- Full compatibility with `.squad/` workspaces
+
+We drop:
+
+- The 74 KB `squad.agent.md` coordinator manifest at run time (it's compiled into the binary instead)
+- The dependency on Copilot CLI (we use the SDK directly)
+- The `@bradygaster/squad-cli` runtime dependency
+
+See [Squad Design](/squad) for the full mapping.
+
+## Can I use pwagent without GitHub Copilot?
+
+No, not in v0.4. The only provider adapter is `@github/copilot-sdk`. Adding a different provider would mean:
+
+- A new adapter under `cli/src/runtime/providers/`
+- Auth wiring for whatever credential the provider needs
+- Documenting the trade
+
+If you have a use case (e.g. an Anthropic API account but no Copilot subscription), open an issue. We may add a second adapter if there's demand.
+
+## Where do agents store memory?
+
+Three places:
+
+- **In-session.** The model's conversation context, lost when the SDK session closes.
+- **Audit log.** Append-only at `~/.pwagent/audit/events.jsonl` — every run + tool invocation.
+- **Charter memory.** Squad's append-only `agents/<name>/history.md` — each agent's longitudinal notes, merge-strategy `union` so concurrent updates don't clobber.
+
+There is **no vector DB**, **no embedding store**, **no semantic recall**. The skill-aware injection is plain keyword scoring against skill `description:` frontmatter. Simpler, fully grep-able, no extra deps.
+
+## Can I write a charter in Python / JSON / YAML?
+
+No. Charters are Markdown. The frontmatter is YAML; the body is human-readable Markdown. Both are version-controllable and diff-friendly. JSON would be machine-friendly but human-hostile; Python would tie charters to a runtime that pwagent itself doesn't depend on.
+
+## How do I disable HITL for a CI run?
+
+```bash
+pwagent run heal --skip-gate --from-triage X
+```
+
+This bypasses the stamp check. The `run.start` event records `gateSkipped: true` so audits flag it. **Don't do this in production** — the stamp exists because misclassified triage leads to bad heals.
+
+## Is there a hosted version?
+
+No. pwagent is **local-only by design**. Every byte of state is on your machine; every model call is per-user via your `gh` auth. We have no plans for a hosted SaaS.
+
+## License
+
+MIT. See [LICENSE](https://github.com/microsoft/pwagent/blob/main/LICENSE).

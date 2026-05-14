@@ -1,0 +1,74 @@
+---
+title: Authentication
+---
+
+# Authentication
+
+pwagent runs **only** on `@github/copilot-sdk`. The SDK resolves its token from the `gh` CLI's keychain, so authentication is a single `gh auth login` step.
+
+## One-time setup
+
+```powershell
+pwagent login           # wraps `gh auth login --web --scopes read:user`
+```
+
+This:
+
+1. Opens a browser to GitHub's device-flow page
+2. Asks you to enter the one-time code shown in the terminal
+3. Stores the token in the `gh` keychain (Windows Credential Manager / macOS Keychain / `~/.config/gh/hosts.yml`)
+4. Verifies that the account has an active Copilot subscription
+
+## Verifying
+
+```powershell
+pwagent whoami
+```
+
+Prints the GitHub login + Copilot subscription status. If `whoami` succeeds, every other `pwagent run` will too.
+
+```powershell
+pwagent doctor
+```
+
+The `copilot probe` line in `doctor` does a live SDK round-trip (imports `@github/copilot-sdk`, opens a session, closes it) so you know reachability is real, not just that a token exists.
+
+## Logout
+
+```powershell
+pwagent logout          # `gh auth logout --hostname github.com`
+```
+
+Removes the stored credential. After logout, every `pwagent run` will fail with `auth-missing` until you re-login.
+
+## What we never do
+
+- We do **not** prompt for an API key. There is no API key.
+- We do **not** read environment variables like `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, etc.
+- We do **not** store a copy of the gh token anywhere ourselves. Every model call asks `gh` to resolve a fresh one.
+
+## Token rotation
+
+When `gh auth refresh` rotates the token, pwagent picks it up on the next process spawn. No restart of `pwagent scheduler` is needed — the SDK re-reads gh's keychain each session.
+
+## CI / unattended
+
+For CI runners and the `pwagent service install` background scheduler:
+
+1. Generate a GitHub PAT with `read:user` scope (or use a fine-grained PAT pinned to your org with the Copilot scope enabled).
+2. Tell `gh` to use it:
+   ```powershell
+   $env:GH_TOKEN = "<your-pat>"
+   gh auth status                # should report logged in via GH_TOKEN
+   ```
+3. The Copilot SDK will pick up the same `GH_TOKEN`. No extra wiring inside pwagent.
+
+## Why a single auth provider
+
+The team explicitly chose **one** auth surface to keep the binary thin:
+
+- One install (`gh`), one prereq, one rotation path.
+- No `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `BEDROCK_*` configuration in `config.json`.
+- No multi-provider fallback logic in the runtime — fewer failure modes.
+
+If GitHub Copilot ever isn't available for your account, pwagent is not for you. The [provider note in the README](https://github.com/microsoft/pwagent#provider-note--what-we-use-what-we-dont) covers that decision.

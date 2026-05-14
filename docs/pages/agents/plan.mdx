@@ -1,0 +1,54 @@
+---
+title: Plan
+---
+
+# Plan
+
+The **plan** agent builds an ordered fix plan from a `failures.json` summary or a coverage-gap report.
+
+## Identity
+
+- **Role:** Fix-plan author
+- **Project:** pwagent
+- **Default mode:** Standard
+
+## Responsibilities
+
+- Read the input artifact (`failures.json` from the monitor job, or a `ScenarioGap` list from `scenario`)
+- Group failures by likely common root cause (same selector, same flow, same service dependency)
+- Order the groups by impact × cost-to-fix (P0 first, easy wins early)
+- Emit a Markdown plan: `## Pass 1: high-impact, low-cost` / `## Pass 2: …` etc.
+- Each item points at the agent that should fix it (`heal`, `generate`, `auth`)
+
+## Boundaries
+
+- Plan does **not** invoke other agents. It only writes the plan.
+- Plan does **not** estimate hours or assign humans.
+- Plan does **not** judge whether something is *worth* fixing — it just sequences what's given.
+
+## Tools
+
+- `read`, `grep` — scan inputs
+- `write` — save the plan to `~/.pwagent/plans/<date>.md`
+
+## Model
+
+- Preferred: `claude-sonnet-4.5`
+
+## Invoking it
+
+```powershell
+pwagent run plan --failures ./failures.json
+pwagent run plan --from-scenario
+```
+
+## Required stamps
+
+| Input | Stamp |
+|---|---|
+| `triage` artifact | yes (at least one stamped verdict) |
+| `scenario` artifact | no |
+
+## Source
+
+[`cli/src/content/agents/plan/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/plan/charter.md)

@@ -1,0 +1,107 @@
+---
+title: Architecture
+---
+
+import { Cards, Card } from '../../components/Cards';
+import { Layers, Network, Workflow, Cpu, GitBranch, Shield, Activity, Settings } from 'lucide-react';
+
+# Architecture
+
+pwagent is **Squad's design with our runtime**. The eleven Squad benefits port into the binary as first-class modules or filesystem conventions — same charter format, same routing.md / ceremonies.md / team.md files, but no upstream `squad.agent.md` coordinator manifest at run time. The coordinator logic is a TypeScript module inside the binary.
+
+## At a glance
+
+```mermaid
+flowchart TB
+    User([Developer / CI runner])
+
+    subgraph pwagent_CLI ["pwagent — single Node binary"]
+        Cmd[Sub-command router<br/>commander.js]
+
+        subgraph Squadlike ["Squad design ported"]
+            Coord[Coordinator<br/>routing + gates + ceremonies]
+            Mode[Response Mode<br/>direct · light · standard · full]
+            Spawn[Parallel-by-default spawner]
+            Scribe[Scribe — silent logger]
+            Ralph[Ralph — session driver]
+        end
+
+        subgraph Content ["Source content"]
+            Charters[10 charters<br/>.md files embedded]
+            Skills[60+ skills<br/>core · ci · pom · playwright-cli · kusto · ado · a11y]
+            Routing[routing.md]
+            Ceremonies[ceremonies.md]
+            Team[team.md]
+        end
+
+        Override[Override loader<br/>~/.pwagent/ + .pwagent/ + .squad/]
+        Runtime[Agent runtime<br/>system prompt + tool loop]
+        Tools[Tool sandbox<br/>read · write · edit · bash · gh · npx · az]
+        Sched[Scheduler<br/>same process]
+        Provider[Copilot SDK adapter]
+    end
+
+    Portal["@pwagent/portal<br/>(Next.js 15, port 7337)"]
+    Docs["@pwagent/docs<br/>(Nextra, port 7338)"]
+    StateDir[("~/.pwagent/<br/>config.json · scheduler/ · logs/ · audit/")]
+
+    User --> Cmd
+    User -->|browser| Portal
+    User -->|browser| Docs
+    Portal -.help link.-> Docs
+
+    Cmd --> Coord
+    Cmd --> Sched
+    Coord --> Mode --> Spawn --> Runtime
+    Coord --> Routing
+    Coord --> Ceremonies
+    Runtime --> Charters --> Override
+    Runtime --> Skills
+    Spawn --> Scribe
+    Spawn --> Ralph
+    Runtime --> Tools
+    Runtime --> Provider
+    Sched --> Coord
+
+    Provider --> CopilotSDK[("@github/copilot-sdk")]
+    CopilotSDK -->|gh auth| GitHub[(GitHub Copilot service)]
+
+    Cmd <--> StateDir
+    Sched <--> StateDir
+    Portal --> StateDir
+    Portal --> Charters
+```
+
+## Hard rules
+
+- **Squad design, our runtime.** Adopt the eleven Squad benefits verbatim as filesystem conventions and runtime behaviours. Do **not** load the upstream Squad coordinator manifest at run time.
+- **Embedded by default.** All 10 charters and 60+ skill guides ship inside the binary. Works zero-config in any directory.
+- **Workspace overrides win.** If `cwd/.pwagent/agents/triage/charter.md` exists, it overrides the embedded triage charter. Source-controlled customisation without forking the binary.
+- **Scheduler is a sub-command**, not a separate daemon. Same logs, same config, same process.
+- **Three independent layers.** CLI, portal, and scheduler each function alone; removing any one leaves the others working.
+
+## Read more
+
+<Cards cols={2}>
+  <Card icon={<Layers />} title="Three Layers" href="/architecture/layers">
+    CLI / portal / scheduler — what each does, what isolation looks like
+  </Card>
+  <Card icon={<GitBranch />} title="Override Chain" href="/architecture/override-chain">
+    How charter and skill resolution walks the four-step priority chain
+  </Card>
+  <Card icon={<Workflow />} title="Coordinator Runtime" href="/architecture/coordinator">
+    What `pwagent run` actually does — charter loading, model selection, tool filtering
+  </Card>
+  <Card icon={<Cpu />} title="Response Modes" href="/architecture/response-modes">
+    Direct / Lightweight / Standard / Full — when each mode is chosen
+  </Card>
+  <Card icon={<Shield />} title="Tool Sandbox" href="/architecture/tool-sandbox">
+    Binary allowlist, output caps, timeouts, the read/write/edit/bash/grep contract
+  </Card>
+  <Card icon={<Activity />} title="Sequence Diagrams" href="/architecture/sequence-diagrams">
+    Bootstrap, agent invocation, scheduler tick, portal SSR — Mermaid flows
+  </Card>
+  <Card icon={<Settings />} title="Invariants" href="/architecture/invariants">
+    Hard rules the runtime enforces and what happens when they're violated
+  </Card>
+</Cards>
