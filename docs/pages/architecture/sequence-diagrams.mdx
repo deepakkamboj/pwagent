@@ -4,7 +4,47 @@ title: Sequence Diagrams
 
 # Sequence Diagrams
 
-End-to-end flows for the four core paths.
+End-to-end flows for the core paths. Two daily-driver shapes: **chat** (`pwagent` no args → Squad → Copilot CLI) and **CI** (`pwagent run <agent>` → coordinator → SDK).
+
+## Chat launch — `pwagent` opens GitHub Copilot CLI
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Term as Terminal
+    participant Bin as pwagent binary
+    participant FS as filesystem
+    participant Squad as @bradygaster/squad-cli (npx)
+    participant Copilot as GitHub Copilot CLI
+
+    User->>Term: pwagent
+    Term->>Bin: argv = ["pwagent"]; stdin.isTTY = true
+
+    Bin->>Bin: route to squad-host.ts
+
+    Bin->>FS: exists(.pwagent/)?
+    alt missing — first run
+        Bin->>FS: cp embedded/{agents,skills,routing.md,...} → .pwagent/
+        Bin-->>Term: "scaffolded .pwagent/"
+    end
+
+    Bin->>FS: rm -rf .squad/
+    Bin->>FS: cp .pwagent/ → .squad/   (mirror)
+    Bin-->>Term: "launching GitHub Copilot CLI via Squad…"
+
+    Bin->>Squad: spawn npx @bradygaster/squad-cli (stdio inherit)
+    Squad->>FS: detect .squad/  →  found
+    Squad->>FS: read .squad/agents/, skills/, routing.md, team.md
+    Squad->>Copilot: launch with squad.agent.md coordinator + roster
+    Copilot-->>User: banner, slash-menu, › prompt
+
+    Note over User,Copilot: User chats interactively.<br/>Slash commands like /fix --orchestrate ...<br/>route to specialists via Squad's coordinator.
+
+    User->>Copilot: /quit
+    Copilot-->>Squad: exit 0
+    Squad-->>Bin: exit 0
+    Bin->>Term: process.exit(0)
+```
 
 ## Bootstrap — first-time setup on a new machine
 
@@ -41,12 +81,14 @@ sequenceDiagram
     Bin-->>User: Ready. (features matrix)
 ```
 
-## Agent invocation — `pwagent run triage`
+## Agent invocation (CI / unattended) — `pwagent run triage`
+
+The interactive path goes through Copilot CLI (see [Chat launch](#chat-launch--pwagent-opens-github-copilot-cli) above). The `pwagent run` command is for **CI / scheduled / scripted** invocations — no Copilot CLI dependency on the runner; uses `@github/copilot-sdk` directly.
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant CLI as pwagent run
+    participant CLI as pwagent run (CI path)
     participant Coord as Coordinator
     participant Charter as charter.md (triage)
     participant Skills as skills/*.md

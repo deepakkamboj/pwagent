@@ -185,51 +185,60 @@ flowchart TB
 
     subgraph pwagent_CLI ["pwagent — single Node binary"]
         Cmd[Sub-command router<br/>commander.js]
+        SquadHost[squad-host.ts<br/>scaffolds .pwagent/ → .squad/]
 
-        subgraph Squadlike ["Squad design ported"]
-            Coord[Coordinator<br/>routing + gates + ceremonies]
-            Mode[Response Mode<br/>direct · light · standard · full]
-            Spawn[Parallel-by-default spawner]
-            Scribe[Scribe — silent logger]
-            Ralph[Ralph — session driver]
-        end
-
-        subgraph Content ["Source content"]
-            Charters[10 charters<br/>.md files embedded]
+        subgraph Content ["Embedded content (baked in)"]
+            Charters[13 charters<br/>agents/&lt;name&gt;/charter.md]
             Skills[60+ skills<br/>core · ci · pom · playwright-cli · kusto · ado · a11y]
             Routing[routing.md]
             Ceremonies[ceremonies.md]
             Team[team.md]
+            Master[master-prompt.md]
         end
 
-        Override[Override loader<br/>~/.pwagent/ + .pwagent/ + .squad/]
-        Runtime[Agent runtime<br/>system prompt + tool loop]
-        Tools[Tool sandbox<br/>read · write · edit · bash · gh · npx · az]
-        Sched[Scheduler<br/>same process]
-        Provider[Copilot SDK adapter]
+        subgraph CILoop ["pwagent run — CI/unattended path"]
+            Coord[Coordinator<br/>routing + gates + ceremonies]
+            Runtime[Agent runtime<br/>system prompt + tool loop]
+            Tools[Tool sandbox<br/>read · write · edit · bash · grep]
+            Provider[Copilot SDK adapter]
+        end
+
+        Sched[Scheduler<br/>in-process tick loop]
     end
 
+    subgraph ChatChain ["Chat — pwagent (no args, TTY)"]
+        SquadCLI[@bradygaster/squad-cli<br/>npx]
+        CopilotCLI[GitHub Copilot CLI<br/>banner · slash menus · streaming]
+    end
+
+    Workspace[(Workspace root<br/>.pwagent/  ← canonical<br/>.squad/    ← auto mirror)]
     Portal["@pwagent/portal<br/>(Next.js 15, port 7337)"]
     StateDir[("~/.pwagent/<br/>config.json · scheduler/ · logs/ · audit/")]
 
-    User --> Cmd
+    User -->|"pwagent (no args, TTY)"| SquadHost
+    User -->|"pwagent run <agent>"| Cmd
     User -->|browser| Portal
+
+    SquadHost -->|"scaffold + mirror"| Workspace
+    SquadHost -->|"spawn"| SquadCLI
+    SquadCLI -->|"reads .squad/"| Workspace
+    SquadCLI -->|"hands off"| CopilotCLI
+    CopilotCLI -->|"gh auth"| GitHub[(GitHub Copilot service)]
 
     Cmd --> Coord
     Cmd --> Sched
-    Coord --> Mode --> Spawn --> Runtime
-    Coord --> Routing
-    Coord --> Ceremonies
-    Runtime --> Charters --> Override
+    Coord --> Runtime
+    Coord --> Charters
     Runtime --> Skills
-    Spawn --> Scribe
-    Spawn --> Ralph
+    Runtime --> Routing
+    Runtime --> Ceremonies
+    Runtime --> Master
     Runtime --> Tools
     Runtime --> Provider
     Sched --> Coord
 
     Provider --> CopilotSDK[("@github/copilot-sdk")]
-    CopilotSDK -->|gh auth| GitHub[(GitHub Copilot service)]
+    CopilotSDK -->|gh auth| GitHub
 
     Cmd <--> StateDir
     Sched <--> StateDir
@@ -237,10 +246,17 @@ flowchart TB
     Portal --> Charters
 ```
 
+**Two daily-driver flows, one shared content base:**
+
+- **Chat (interactive)** — `pwagent` spawns Squad → Copilot CLI; .pwagent/ → .squad/ mirror feeds Squad; Copilot CLI provides the chat UX.
+- **CI (unattended)** — `pwagent run <agent>` uses our own coordinator + `@github/copilot-sdk` directly; no Copilot CLI dependency on CI runners.
+
+Same 13 agents, same skills, same routing — different invocation surfaces.
+
 ### Hard rules
 
 - **Squad design, our runtime.** We adopt the eleven Squad benefits verbatim as filesystem conventions and runtime behaviours. We do **not** load the upstream Squad coordinator manifest at run time — the coordinator logic is a module inside `pwagent`.
-- **Embedded by default.** All 10 charters and 60+ skill guides ship inside the binary. Works zero-config in any directory.
+- **Embedded by default.** All 13 charters and 60+ skill guides ship inside the binary. Works zero-config in any directory.
 - **Workspace overrides win.** If `cwd/.pwagent/agents/triage/charter.md` exists, it overrides the embedded triage charter for that invocation. Source-controlled customisation without forking the binary.
 - **Scheduler is a sub-command**, not a separate daemon. Same logs, same config, same process.
 - **Three independent layers.** CLI, portal, and scheduler each function alone; removing any one leaves the others working.
@@ -969,6 +985,44 @@ This makes pwagent fully compatible with workspaces scaffolded by `npx @bradygas
 ---
 
 ## Sequence diagrams
+
+### Chat launch — `pwagent` opens GitHub Copilot CLI
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Term as Terminal
+    participant Bin as pwagent binary
+    participant FS as filesystem
+    participant Squad as @bradygaster/squad-cli (npx)
+    participant Copilot as GitHub Copilot CLI
+
+    User->>Term: pwagent
+    Term->>Bin: argv=["pwagent"]; stdin.isTTY=true
+    Bin->>Bin: route to squad-host.ts
+
+    Bin->>FS: exists(.pwagent/)?
+    alt missing — first run
+        Bin->>FS: cp embedded/{agents,skills,routing.md,...} → .pwagent/
+        Bin-->>Term: "scaffolded .pwagent/"
+    end
+
+    Bin->>FS: rm -rf .squad/
+    Bin->>FS: cp .pwagent/ → .squad/  (mirror)
+    Bin-->>Term: "launching Copilot CLI via Squad…"
+
+    Bin->>Squad: spawn npx @bradygaster/squad-cli (stdio inherit)
+    Squad->>FS: read .squad/agents/, skills/, routing.md, team.md
+    Squad->>Copilot: launch with squad.agent.md coordinator + roster
+    Copilot-->>User: banner, slash-menu, › prompt
+
+    Note over User,Copilot: User chats interactively.<br/>/fix --orchestrate routes via Squad's coordinator.
+
+    User->>Copilot: /quit
+    Copilot-->>Squad: exit 0
+    Squad-->>Bin: exit 0
+    Bin->>Term: process.exit(0)
+```
 
 ### Bootstrap — first-time setup on a new machine
 

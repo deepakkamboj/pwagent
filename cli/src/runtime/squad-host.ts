@@ -116,17 +116,25 @@ export async function startSquadShell(cwd: string): Promise<number> {
 
   return await new Promise<number>((resolvePromise) => {
     const isWin = process.platform === "win32";
-    const npxBin = isWin ? "npx.cmd" : "npx";
 
-    const child = spawn(npxBin, ["@bradygaster/squad-cli"], {
-      cwd,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        SQUAD_HOST: "pwagent",
-      },
-      shell: false,
-    });
+    // On Windows, npx is a .cmd shim. Node ≥ 18.20.2 / 20.12.2 / 21.7.3 refuses
+    // to spawn .cmd files without shell: true (CVE-2024-27980). The args here
+    // are not user-derived so shell injection isn't a real concern, but to be
+    // defensive we still wrap the command + args into a single string only
+    // when shell: true is in play.
+    const child = isWin
+      ? spawn("npx @bradygaster/squad-cli", {
+          cwd,
+          stdio: "inherit",
+          env: { ...process.env, SQUAD_HOST: "pwagent" },
+          shell: true,
+        })
+      : spawn("npx", ["@bradygaster/squad-cli"], {
+          cwd,
+          stdio: "inherit",
+          env: { ...process.env, SQUAD_HOST: "pwagent" },
+          shell: false,
+        });
 
     child.on("exit", (code) => resolvePromise(code ?? 0));
     child.on("error", (err) => {
