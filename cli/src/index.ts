@@ -62,17 +62,29 @@ program.addCommand(auditCommand);
 // Cosmetic
 program.addCommand(bannerCommand);
 
-// Running `pwagent` with no subcommand should print help and exit 0 — not an
-// error condition. commander's default behaviour is exit 1 here, which makes
-// `npm start` look like a failure when nothing is actually wrong.
+// Running `pwagent` with no subcommand:
+//   - TTY stdin (interactive terminal) → drop into chat (the daily-driver workflow)
+//   - non-TTY (piped, CI, file redirect) → print help and exit 0 so scripts that
+//                                          pipe to pwagent don't accidentally open
+//                                          an SDK session
 if (process.argv.length <= 2) {
-  if (shouldShowBanner()) showBanner();
-  program.outputHelp();
-  process.exit(0);
+  if (process.stdin.isTTY) {
+    program
+      .parseAsync(["node", "pwagent", "chat"])
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(c.err(`error: ${msg}`));
+        process.exit(1);
+      });
+  } else {
+    if (shouldShowBanner()) showBanner();
+    program.outputHelp();
+    process.exit(0);
+  }
+} else {
+  program.parseAsync(process.argv).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(c.err(`error: ${msg}`));
+    process.exit(1);
+  });
 }
-
-program.parseAsync(process.argv).catch((err: unknown) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  console.error(c.err(`error: ${msg}`));
-  process.exit(1);
-});

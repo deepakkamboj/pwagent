@@ -483,31 +483,78 @@ npm run dev             # http://127.0.0.1:7337
 
 ## Usage
 
-### CLI commands
+### Daily driver — `pwagent` drops you into chat
 
 ```bash
-# bootstrap
-pwagent init [--yes]
-pwagent login | logout | whoami
-pwagent doctor [--fix] [--no-probe] [--probe-timeout <ms>]
-pwagent prereqs [--install] [--include-optional] [--skip <ids>] [--yes] [--dry-run]
+pwagent                              # opens chat (same as `pwagent chat`)
+```
 
-# inspection
+That's the whole workflow. Type free text or slash commands; the supervisor routes natural language to the right specialist automatically, and `/<agent> <args>` invokes any specialist directly. Sessions auto-save to `~/.pwagent/sessions/<id>.jsonl`.
+
+See the dedicated [Interactive chat — `pwagent chat`](#interactive-chat--pwagent-chat) section below for the slash-command reference and screenshots.
+
+### Bootstrap (one time)
+
+```bash
+pwagent init [--yes]
+pwagent login                       # gh auth login --web (Copilot SDK)
+pwagent doctor                      # verify prereqs + auth + SDK reachability
+pwagent prereqs --install --yes     # install missing prereqs (gh, az, axe, kusto)
+```
+
+These all also work as slash commands inside chat: `/init`, `/login`, `/doctor`, `/doctor --fix`.
+
+### Inspection
+
+```bash
 pwagent agents list
-pwagent agents show <name>           # e.g. triage, heal, validate, supervisor
+pwagent agents show <name>           # e.g. triage, fix, validate, supervisor
 pwagent agents add <path>
 pwagent skills list [--pack core|ci|pom|playwright-cli|kusto|ado|a11y]
 pwagent skills show <pack>/<name>    # e.g. core/locators, ado
+```
 
-# config + model
+Inside chat: `/agents`, `/skills`, `/help <agent>`.
+
+### Config + model
+
+```bash
 pwagent config view | get <path> | set <path> <val> | path
 pwagent model list | show | set <id> [--agent <agent>] | reset
+```
 
-# runtime — invoke an agent through the coordinator + Copilot SDK
-pwagent run <agent> [prompt...] [--model <id>] [--mode direct|light|standard|full] [--cwd <path>] [--dry-run] [--json] [--debug] [--connect-timeout-s <n>]
-pwagent chat [--agent supervisor] [--resume <id>] [--list]   # interactive multi-turn REPL with persistent sessions
-pwagent review                       # interactive HITL stamp loop
-pwagent ralph go | status | stop     # in-session driver (Squad-style)
+Inside chat: `/model <id>`.
+
+### CI / unattended — `pwagent run` (not the daily-driver path)
+
+`pwagent run <agent>` is kept for **CI runners and scheduled jobs** — same coordinator + SDK as chat, but headless. Use it from GitHub Actions, ADO Pipelines, the scheduler in `~/.pwagent/scheduler/`, or any non-interactive context.
+
+```bash
+# CI mode — fix everything red without a human in the loop
+pwagent run fix --orchestrate --ado-pipeline 23878 --auto-stamp --json
+
+# Scheduler job spec
+{
+  "command": "pwagent run fix --orchestrate --ado-pipeline 23878 --max-failures 5 --auto-stamp",
+  "schedule": { "type": "cron", "cron": "*/15 9-17 * * 1-5" }
+}
+```
+
+Full flags:
+
+```bash
+pwagent run <agent> [prompt...] [--model <id>] [--mode direct|light|standard|full] \
+                                 [--cwd <path>] [--dry-run] [--json] [--debug] \
+                                 [--connect-timeout-s <n>] [--idle-timeout-s <n>]
+```
+
+For day-to-day human use, **just type `pwagent`** and use slash commands.
+
+### Other entry points
+
+```bash
+pwagent review                       # interactive HITL stamp loop (also /review in chat)
+pwagent ralph go | status | stop     # in-session driver (Squad-style; legacy)
 
 # scheduler — in-process, hot-reload, JSONL events
 pwagent scheduler start [--daemon]
@@ -621,30 +668,74 @@ Full examples and end-to-end workflows live in [USAGE.md](USAGE.md).
 
 ### Interactive chat — `pwagent chat`
 
-For interactive multi-turn use, `pwagent chat` opens a REPL with the same coordinator + SDK as `pwagent run`. The SDK session stays open across turns so conversation context is retained natively.
+Type `pwagent` (or `pwagent chat`) to open the chat REPL. Visual style matches GitHub Copilot CLI: pink dots for agent narration, `✔` for completions, dim sub-lines for tool results, `›` prompt, and a status bar below the env line.
 
 ```bash
-pwagent chat                              # supervisor, standard mode
-pwagent chat --agent fix --mode direct    # chat with a specific agent
-pwagent chat --resume <session-id>        # continue a prior session (replays user turns to rebuild context)
+pwagent                                   # same as `pwagent chat`
+pwagent chat                              # explicit form
+pwagent chat --agent fix --mode direct    # pin to a specific agent + mode
+pwagent chat --resume <session-id>        # continue a prior session (replays user turns)
 pwagent chat --list                       # show saved sessions
 ```
 
-Slash commands while inside the REPL:
+**Autonomous routing.** Inside chat, the default active agent is the **supervisor**. The supervisor has a `dispatch_to_agent` tool — when you type free text, it picks the right specialist and runs it for you without asking permission. Example:
 
-| Command | Effect |
-|---|---|
-| `/help` | List slash commands |
-| `/agents` | List available agents |
-| `/agent <name>` | Switch active agent (rebuilds the SDK session with the new charter) |
-| `/model <id>` | Switch model (rebuilds the SDK session) |
-| `/mode direct\|light\|standard\|full` | Change response mode hint for next turn |
-| `/skills` | Show skills injected for the current agent |
-| `/session` | Show current session id + path on disk |
-| `/clear` | Clear screen |
-| `/exit`, `/quit` | Disconnect and exit |
+```
+› fix everything red in pipeline 23878
 
-Every turn is appended to `~/.pwagent/sessions/<session-id>.jsonl` as one JSON record per line (`user`, `assistant`, or `system` for errors). `--resume` reads that file and replays the user turns silently into a fresh SDK session so the model rebuilds context.
+● dispatch_to_agent  fix
+   args  --orchestrate --ado-pipeline 23878
+   model claude-sonnet-4.5
+
+[fix runs its full chain: discover → triage → review → plan → fix → validate → publish]
+
+✔ done · 73.2s · 1 tool call
+```
+
+**Direct slash invocation.** To bypass the supervisor and call a specialist immediately, prefix with the agent name:
+
+```
+› /fix --orchestrate --ado-pipeline 23878
+› /triage --run-id 89211
+› /analyze --flakes --pipeline 23878 --top 10
+› /author --scenario "logged-in user applies a coupon and removes it"
+```
+
+**Slash command reference:**
+
+| Group | Command | Effect |
+|---|---|---|
+| Setup | `/init` | Reconfigure provider, ADO, repos (interactive) |
+| Setup | `/doctor [--fix] [--no-probe]` | Run health check; `--fix` installs missing prereqs |
+| Setup | `/login` · `/logout` | gh auth flow |
+| Agent | `/agents` | List the 13 specialist agents |
+| Agent | `/agent <name>` | Switch active agent (rebuilds the chat session) |
+| Agent | `/<name> [args]` | Direct one-shot call to that specialist (e.g. `/fix --orchestrate ...`) |
+| Agent | `/model <id>` | Switch model for the active session |
+| Agent | `/mode direct\|light\|standard\|full` | Change response mode |
+| Agent | `/skills` | Show injected skills for the current agent |
+| Session | `/session` · `/list-sessions` | Session id + path; list saved sessions |
+| Session | `/cwd [path]` | Show or change tool working directory |
+| Session | `/clear` | Clear screen and redraw banner |
+| Session | `/exit` · `/quit` | Disconnect and exit |
+| Session | `/help [agent]` | Slash-command list or one agent's invocation patterns |
+
+**Startup probe.** Before the first `›` prompt, pwagent runs a fast (< 800 ms) health check:
+
+```
+✔ ready · v0.1.0 · claude-haiku-4.5 · D:\gith\CRM.Client.UnifiedClient [main]
+```
+
+If anything's amiss (no config, gh not logged in, prereq missing):
+
+```
+✗ doctor: 2 required prereqs missing (axe, kusto)
+  Type /doctor for details · /init to reconfigure · /login if your token is stale
+```
+
+The status line above the prompt shows your cwd + git branch. The bar below shows version, slash-command hints, and the active agent + model.
+
+**Sessions.** Every turn appends to `~/.pwagent/sessions/<id>.jsonl` (`user`, `assistant`, or `system` for errors). `--resume <id>` reads that file and replays your user turns silently into a fresh SDK session so the model rebuilds context. Saved sessions show up under `/list-sessions`.
 
 ### Coordinator runtime — what `pwagent run` actually does
 
