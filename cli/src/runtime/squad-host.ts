@@ -29,11 +29,102 @@
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { c } from "../utils/colors.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+
+/** Locate squad-cli's install root regardless of where it was hoisted to. */
+function findSquadCliRoot(): string | undefined {
+  try {
+    const pkgPath = require.resolve("@bradygaster/squad-cli/package.json");
+    return dirname(pkgPath);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Rebrand Squad CLI's shell components in place so the user sees pwagent
+ * everywhere instead of squad. Two strings live in compiled React (Ink)
+ * components and aren't otherwise configurable:
+ *   - banner text "SQUAD" → "PWAGENT"
+ *   - prompt label "squad>" / "sq>" → "pwagent>" / "pw>"
+ *
+ * The patch is **idempotent** — on each launch we check whether the strings
+ * still exist, only writing if they do. If npm reinstalls Squad and wipes our
+ * patches, the next `pwagent` invocation reapplies them.
+ *
+ * Risk: Squad's UI surface changes across versions. We detect "didn't find
+ * any of the expected patterns" and skip silently rather than crashing.
+ */
+async function rebrandSquadShell(): Promise<void> {
+  const root = findSquadCliRoot();
+  if (!root) return;
+
+  const targets: Array<{ path: string; replacements: Array<[RegExp, string]> }> = [
+    {
+      path: join(root, "dist", "cli", "shell", "components", "App.js"),
+      replacements: [
+        [/children: "SQUAD"/g, 'children: "PWAGENT"'],
+        [/children: \["SQUAD v"/g, 'children: ["PWAGENT v"'],
+      ],
+    },
+    {
+      path: join(root, "dist", "cli", "shell", "components", "InputPrompt.js"),
+      replacements: [
+        [/'◆ squad> '/g, "'◆ pwagent> '"],
+        [/'sq> '/g, "'pw> '"],
+      ],
+    },
+  ];
+
+  for (const t of targets) {
+    if (!existsSync(t.path)) continue;
+    try {
+      let src = await readFile(t.path, "utf8");
+      let changed = false;
+      for (const [pat, repl] of t.replacements) {
+        if (pat.test(src)) {
+          src = src.replace(pat, repl);
+          changed = true;
+        }
+      }
+      if (changed) await writeFile(t.path, src, "utf8");
+    } catch {
+      /* ignore — Squad may have changed its UI in a way we can't patch */
+    }
+  }
+}
+
+/**
+ * Ensure `.github/agents/squad.agent.md` exists. Squad CLI requires this file
+ * as the coordinator agent that orchestrates the others. We seed it from the
+ * shipped template, but rename `name: Squad` → `name: pwagent` so the agent
+ * identifies as pwagent in responses (e.g. response prefixes).
+ */
+async function ensureCoordinatorManifest(cwd: string): Promise<void> {
+  const root = findSquadCliRoot();
+  if (!root) return;
+  const template = join(root, "templates", "squad.agent.md.template");
+  if (!existsSync(template)) return;
+
+  const ghAgentsDir = join(cwd, ".github", "agents");
+  const dst = join(ghAgentsDir, "squad.agent.md");
+  if (existsSync(dst)) return; // never overwrite a user's customised manifest
+
+  await mkdir(ghAgentsDir, { recursive: true });
+  let body = await readFile(template, "utf8");
+  // Rebrand the coordinator's *identity* (frontmatter `name:` and the
+  // "Squad (Coordinator)" identifier). Leave references to the upstream
+  // Squad framework intact — those are accurate ("Squad's design", etc.).
+  body = body.replace(/^name: Squad$/m, "name: pwagent");
+  body = body.replace(/Squad \(Coordinator\)/g, "pwagent (Coordinator)");
+  await writeFile(dst, body, "utf8");
+}
 
 /** Path to the embedded content baked into the binary at build time. */
 function embeddedContentDir(): string {
@@ -110,6 +201,8 @@ async function ensureScaffolding(cwd: string): Promise<void> {
  */
 export async function startSquadShell(cwd: string): Promise<number> {
   await ensureScaffolding(cwd);
+  await ensureCoordinatorManifest(cwd);
+  await rebrandSquadShell();
 
   console.log(c.dim("  launching GitHub Copilot CLI via Squad…"));
   console.log();
