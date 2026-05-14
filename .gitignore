@@ -13,6 +13,7 @@ coverage/
 .idea/
 *.tsbuildinfo
 .pwagent/
+.squad/
 next-env.d.ts
 .turbo/
 .cache/

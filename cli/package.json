@@ -24,8 +24,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "@bradygaster/squad-cli": "^0.9.4",
     "@github/copilot-sdk": "^0.3.0",
-    "@bradygaster/squad-cli": "github:bradygaster/squad",
     "commander": "^12.1.0",
     "execa": "^9.5.1",
     "gray-matter": "^4.0.3",

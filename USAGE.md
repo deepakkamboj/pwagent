@@ -20,9 +20,10 @@ This is the **practical** guide. For architecture and reference material, see [d
 
 ## Mental model in 60 seconds
 
-- **`pwagent` drops you into chat.** Type free text and the supervisor routes; type `/<agent> <args>` to call a specialist directly. Slash commands cover everything else (`/help`, `/agents`, `/doctor`, `/init`, etc.).
-- For **CI / scheduled runs**, the headless form `pwagent run <agent>` is still available. It uses the same coordinator + SDK as chat, just without the REPL surface.
-- Each agent is a Markdown **charter** with stable sections (Identity, Responsibilities, Boundaries, Tools, Model). Read one with `/help <agent>` in chat or `pwagent agents show <name>` from a shell.
+- **`pwagent` opens GitHub Copilot CLI** with our 13 agents pre-loaded via Squad. The chat UX is Copilot CLI's native interface — banner, slash-command autocomplete, persistent session, syntax highlighting, multi-line input. We don't build a custom REPL.
+- On first run in a workspace, pwagent scaffolds a **`.pwagent/`** directory (canonical content) from its embedded charters, then mirrors it to **`.squad/`** (Squad CLI hardcodes that path). User edits go in `.pwagent/`; `.squad/` is regenerated on every launch.
+- For **CI / scheduled runs**, the headless form `pwagent run <agent>` is still available. It uses pwagent's own coordinator + SDK — no Copilot CLI dependency on CI runners.
+- Each agent is a Markdown **charter** with stable sections (Identity, Responsibilities, Boundaries, Tools, Model). Read one with `pwagent agents show <name>` from a shell, or browse inside Copilot CLI once chat is open.
 - Multi-purpose agents specialize via flags: `fix --scope test|product`, `validate --test|--a11y`, `discover --watch`, `analyze --scenarios|--flakes|--test-quality`, `record --kind matrix|patterns`.
 - Skills are **side knowledge** the coordinator injects automatically based on what you typed. You usually don't pick them; you can override with `--skills`.
 - Some agents are **gated**: `fix --scope product` won't write to `src/` without a `[p]` stamp; `fix --orchestrate` walks through `review` automatically unless `--auto-stamp` is set.
@@ -34,15 +35,20 @@ This is the **practical** guide. For architecture and reference material, see [d
 
 ### From chat (daily driver)
 
+`pwagent` spawns Squad → GitHub Copilot CLI with `.pwagent/`-loaded agents:
+
 ```
-pwagent                                       # opens chat
-› fix everything red in pipeline 23878        # free text → supervisor auto-dispatches
+pwagent                                       # opens Copilot CLI via Squad
+```
+
+Inside Copilot CLI, use its native slash commands (`/help`, `/clear`, `/quit`, `/update`, etc.) or invoke a specialist by name:
+
+```
+› fix everything red in pipeline 23878        # free text → Squad's router picks fix
 › /fix --orchestrate --ado-pipeline 23878     # direct one-shot specialist call
-› /agent fix                                  # switch active agent for free-text turns
-› /doctor                                      # inline health check
-› /init                                        # interactive reconfigure
-› /help                                        # slash-command reference
-› /exit                                        # disconnect
+› /triage --run-id 89211
+› /analyze --flakes --pipeline 23878 --top 10
+› /author --scenario "logged-in user applies a coupon"
 ```
 
 ### From the shell (CI / scripts)

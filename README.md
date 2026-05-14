@@ -483,15 +483,21 @@ npm run dev             # http://127.0.0.1:7337
 
 ## Usage
 
-### Daily driver — `pwagent` drops you into chat
+### Daily driver — `pwagent` opens GitHub Copilot CLI with your agents loaded
 
 ```bash
-pwagent                              # opens chat (same as `pwagent chat`)
+pwagent           # spawns @bradygaster/squad-cli, which launches Copilot CLI
+                  # with pwagent's 13 agents auto-loaded from .squad/
 ```
 
-That's the whole workflow. Type free text or slash commands; the supervisor routes natural language to the right specialist automatically, and `/<agent> <args>` invokes any specialist directly. Sessions auto-save to `~/.pwagent/sessions/<id>.jsonl`.
+That's it. The full GitHub Copilot CLI experience — banner, autocomplete, slash commands, status bar, persistent session — with our agents preloaded.
 
-See the dedicated [Interactive chat — `pwagent chat`](#interactive-chat--pwagent-chat) section below for the slash-command reference and screenshots.
+Under the hood, `pwagent` (no args, TTY) does two things and exits:
+
+1. **Lazy-scaffold** `.squad/` in the current directory from the embedded charters (only if it doesn't already exist; never overwrites your customisations).
+2. **Spawn** `npx @bradygaster/squad-cli`, which loads the `.squad/` and hands off to Copilot CLI.
+
+We don't build a custom chat REPL because Copilot CLI already is one — and Squad makes our agents discoverable inside it.
 
 ### Bootstrap (one time)
 
@@ -666,76 +672,48 @@ pwagent run record --kind patterns --from ./fix-results.json
 
 Full examples and end-to-end workflows live in [USAGE.md](USAGE.md).
 
-### Interactive chat — `pwagent chat`
+### Interactive chat — `pwagent` opens Copilot CLI via Squad
 
-Type `pwagent` (or `pwagent chat`) to open the chat REPL. Visual style matches GitHub Copilot CLI: pink dots for agent narration, `✔` for completions, dim sub-lines for tool results, `›` prompt, and a status bar below the env line.
+`pwagent` (no args, TTY) spawns `@bradygaster/squad-cli`, which launches **GitHub Copilot CLI** with our 13 agents loaded. You get Copilot CLI's full native experience — banner, slash-command autocomplete, persistent session, syntax-highlighted output, multi-line input. We don't reinvent the chat surface.
 
 ```bash
-pwagent                                   # same as `pwagent chat`
-pwagent chat                              # explicit form
-pwagent chat --agent fix --mode direct    # pin to a specific agent + mode
-pwagent chat --resume <session-id>        # continue a prior session (replays user turns)
-pwagent chat --list                       # show saved sessions
+pwagent                # opens Copilot CLI (via squad)
 ```
 
-**Autonomous routing.** Inside chat, the default active agent is the **supervisor**. The supervisor has a `dispatch_to_agent` tool — when you type free text, it picks the right specialist and runs it for you without asking permission. Example:
+**On first run in a workspace:** pwagent lazy-scaffolds a `.squad/` directory from its embedded charters:
 
 ```
-› fix everything red in pipeline 23878
-
-● dispatch_to_agent  fix
-   args  --orchestrate --ado-pipeline 23878
-   model claude-sonnet-4.5
-
-[fix runs its full chain: discover → triage → review → plan → fix → validate → publish]
-
-✔ done · 73.2s · 1 tool call
+.squad/
+├── agents/                  ← 13 charters (analyze, auth, author, discover, fix, ...)
+├── skills/                  ← 60+ skill guides
+├── routing.md
+├── team.md
+├── ceremonies.md
+└── master-prompt.md
 ```
 
-**Direct slash invocation.** To bypass the supervisor and call a specialist immediately, prefix with the agent name:
+Subsequent runs reuse the existing `.squad/`. Customise any file you want — pwagent never overwrites your local changes.
+
+**Inside the Copilot CLI session**, Squad's coordinator handles routing. Type free text or any of Copilot CLI's slash commands (`/help`, `/clear`, `/quit`, `/update`, etc.). To invoke a specific specialist:
 
 ```
 › /fix --orchestrate --ado-pipeline 23878
 › /triage --run-id 89211
 › /analyze --flakes --pipeline 23878 --top 10
-› /author --scenario "logged-in user applies a coupon and removes it"
 ```
 
-**Slash command reference:**
+(Squad maps these to your `.squad/agents/<name>/charter.md` automatically.)
 
-| Group | Command | Effect |
-|---|---|---|
-| Setup | `/init` | Reconfigure provider, ADO, repos (interactive) |
-| Setup | `/doctor [--fix] [--no-probe]` | Run health check; `--fix` installs missing prereqs |
-| Setup | `/login` · `/logout` | gh auth flow |
-| Agent | `/agents` | List the 13 specialist agents |
-| Agent | `/agent <name>` | Switch active agent (rebuilds the chat session) |
-| Agent | `/<name> [args]` | Direct one-shot call to that specialist (e.g. `/fix --orchestrate ...`) |
-| Agent | `/model <id>` | Switch model for the active session |
-| Agent | `/mode direct\|light\|standard\|full` | Change response mode |
-| Agent | `/skills` | Show injected skills for the current agent |
-| Session | `/session` · `/list-sessions` | Session id + path; list saved sessions |
-| Session | `/cwd [path]` | Show or change tool working directory |
-| Session | `/clear` | Clear screen and redraw banner |
-| Session | `/exit` · `/quit` | Disconnect and exit |
-| Session | `/help [agent]` | Slash-command list or one agent's invocation patterns |
+**Why delegate the chat to Copilot CLI?** Two reasons:
 
-**Startup probe.** Before the first `›` prompt, pwagent runs a fast (< 800 ms) health check:
+1. **Copilot CLI is mature** — autocomplete, history, multi-line input, syntax highlighting, persistent session, mobile mirroring. Things we'd never build well alone.
+2. **Squad provides the bridge** — Squad's coordinator manifest discovers our `.squad/` charters and wires routing inside the Copilot session. The Squad CLI is already a `pwagent` dependency.
 
+**For CI / scripted invocations** that can't open Copilot CLI, the **`pwagent run`** command stays — same coordinator, same SDK, headless:
+
+```bash
+pwagent run fix --orchestrate --ado-pipeline 23878 --auto-stamp --json
 ```
-✔ ready · v0.1.0 · claude-haiku-4.5 · D:\gith\CRM.Client.UnifiedClient [main]
-```
-
-If anything's amiss (no config, gh not logged in, prereq missing):
-
-```
-✗ doctor: 2 required prereqs missing (axe, kusto)
-  Type /doctor for details · /init to reconfigure · /login if your token is stale
-```
-
-The status line above the prompt shows your cwd + git branch. The bar below shows version, slash-command hints, and the active agent + model.
-
-**Sessions.** Every turn appends to `~/.pwagent/sessions/<id>.jsonl` (`user`, `assistant`, or `system` for errors). `--resume <id>` reads that file and replays your user turns silently into a fresh SDK session so the model rebuilds context. Saved sessions show up under `/list-sessions`.
 
 ### Coordinator runtime — what `pwagent run` actually does
 
