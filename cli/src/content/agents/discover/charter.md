@@ -58,6 +58,21 @@ Writes `~/.pwagent/runs/<run-id>/failures.json` with rows:
 }
 ```
 
+## No-args behavior
+
+If invoked with no source flag, ask the user where to discover failures from:
+
+```
+I find failing Playwright tests. Where should I look?
+
+  ADO pipeline:   @discover --ado-pipeline 23878
+  GitHub Actions: @discover --github-run 12345
+  Local output:   @discover --local test-results/
+  Watch mode:     @discover --watch --ado-pipeline 23878
+
+Paste a pipeline URL, run ID, or point me at a local results folder.
+```
+
 ## Boundaries
 
 - **Read-only.** No mutations to source code, tests, or work items.

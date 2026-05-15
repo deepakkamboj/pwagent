@@ -42,6 +42,22 @@ pwagent run validate --a11y --bug AB#54321 --url https://app.example.com/login
 
 Identifies the fix commit + its parent, scans the same URL at both, computes the delta by impact level (critical / serious / moderate / minor), and posts the Markdown table back to the ADO work item as a comment via REST.
 
+## No-args behavior
+
+If invoked with no mode flag, ask the user what to validate:
+
+```
+I validate fixes by running things twice and comparing results. Two modes:
+
+  --test    Re-run a Playwright test twice — both must pass
+            Example: @validate --test tests/login.spec.ts
+
+  --a11y    Scan a URL with axe-core before and after a fix
+            Example: @validate --a11y https://app.example.com --bug 12345
+
+Which would you like? Paste a test file path, a URL, or a bug ID.
+```
+
 ## Boundaries
 
 - **Real browser only.** No MCP / browser-by-API as a fallback for either mode.

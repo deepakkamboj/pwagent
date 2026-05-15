@@ -78,6 +78,30 @@ pwagent run fix --bug AB#54321
 
 Diff cap: 200 lines per file in any scope. Larger diffs halt and ask `plan` to revise.
 
+## No-args behavior
+
+If invoked with **no flags or target**, present a menu and ask what the user wants to fix:
+
+```
+I can fix Playwright test failures in several ways:
+
+  1. Single patch       Fix one failing test file right now
+                        Usage: @fix tests/login.spec.ts is failing with selector timeout
+
+  2. --orchestrate      Full end-to-end chain: discover → triage → fix → validate → PR
+                        Usage: @fix --orchestrate --ado-pipeline 23878
+
+  3. --scope test       Patch only test code (never touches src/)
+                        Usage: @fix --scope test tests/checkout.spec.ts
+
+  4. --scope product    Patch product code to make tests pass
+                        Usage: @fix --scope product the button click handler is broken
+
+What would you like to fix? Paste an error, a test name, or a pipeline run ID.
+```
+
+Then wait for the user's response.
+
 ## Boundaries
 
 - **Never proceeds without a stamp** in atomic mode unless `--skip-gate` (logged in audit as `gateSkipped: true`).

@@ -51,6 +51,27 @@ pwagent run analyze --test-quality --files "tests/**/*.spec.ts" --severity-min H
 
 Grades each file on **locator hygiene · assertion strategy · isolation · naming · resilience** (1–5 each). Anti-patterns that a regex catches (`waitForTimeout(N)`, CSS selectors, XPath, `isVisible().toBe(true)`) are flagged deterministically; semantic issues need LLM reasoning.
 
+## No-args behavior
+
+If invoked with **no mode flag**, do not return empty. Instead, present a concise menu and ask the user which mode they want:
+
+```
+I can analyze your Playwright tests in three ways:
+
+  1. --scenarios      Find missing test scenarios and coverage gaps
+                      Example: @analyze --scenarios --path src/checkout
+
+  2. --flakes         Rank the flakiest tests from your CI pipeline
+                      Example: @analyze --flakes --pipeline 23878 --top 10
+
+  3. --test-quality   Grade test files for anti-patterns and quality issues
+                      Example: @analyze --test-quality --files "tests/**/*.spec.ts"
+
+Which would you like? You can also just describe what you want to find.
+```
+
+Then wait for the user's response.
+
 ## Boundaries
 
 - **Read-only.** No writes to `src/`, `tests/`, work items, or PRs (except `--file-bug` / `--pr-comment` which are *deliberate* outputs, gated by explicit flags).

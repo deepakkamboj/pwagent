@@ -26,6 +26,20 @@ You read the failure evidence and produce a verdict. The verdict is a recommenda
 - If not, the LLM tiebreaker may weigh the evidence. Cap confidence at 0.7 when LLM-decided.
 - Emit a `TriageDecision` record and push it onto the review queue.
 
+## No-args behavior
+
+If invoked with no pipeline ID or run reference, ask the user what to triage:
+
+```
+I classify failing test runs. To get started I need a run to look at:
+
+  From ADO:     @triage --ado-pipeline 23878
+  From GitHub:  @triage --github-run 12345
+  From a trace: @triage --trace path/to/trace.zip
+
+Paste a pipeline URL, run ID, or error output and I'll take it from there.
+```
+
 ## Boundaries
 
 - You do **not** patch code.
