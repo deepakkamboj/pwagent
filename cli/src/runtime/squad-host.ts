@@ -34,17 +34,42 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { c } from "../utils/colors.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
-
-/** Locate squad-cli's install root regardless of where it was hoisted to. */
-function findSquadCliRoot(): string | undefined {
+const _require = createRequire(import.meta.url);
+function getPwagentVersion(): string {
   try {
-    const pkgPath = require.resolve("@bradygaster/squad-cli/package.json");
-    return dirname(pkgPath);
+    // Resolve own package.json to get the correct version even from dist/
+    const pkg = _require("../../package.json") as { version?: string };
+    return pkg.version ?? "0.1.0";
   } catch {
-    return undefined;
+    return "0.1.0";
   }
+}
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Walk up from __dirname to find squad-cli's cli-entry.js.
+ * Avoids require.resolve() which is blocked by squad-cli's `exports` field
+ * (it doesn't expose the ./package.json subpath).
+ */
+function findSquadCliEntry(): string | undefined {
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    const candidate = join(dir, "node_modules", "@bradygaster", "squad-cli", "dist", "cli-entry.js");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+/** Locate squad-cli's install root by finding its cli-entry.js first. */
+function findSquadCliRoot(): string | undefined {
+  const entry = findSquadCliEntry();
+  if (!entry) return undefined;
+  // entry: .../squad-cli/dist/cli-entry.js → root is two levels up
+  return dirname(dirname(entry));
 }
 
 /**
@@ -174,6 +199,7 @@ export async function startSquadShell(cwd: string): Promise<number> {
   const brandEnv = {
     SQUAD_BRAND_NAME: "pwagent",
     SQUAD_BRAND_NAME_UPPER: "PWAGENT",
+    SQUAD_BRAND_VERSION: getPwagentVersion(),
     SQUAD_BRAND_PROMPT: "◆ pwagent> ",
     SQUAD_BRAND_NARROW_PROMPT: "pw> ",
     SQUAD_BRAND_ACCENT: "magenta",
