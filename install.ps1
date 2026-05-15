@@ -94,29 +94,47 @@ if ($nodeResult -eq "ok") {
     $major   = [int]($nodeVer.Split('.')[0])
     if ($major -lt 22) {
         Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
-        Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
-        try {
-            $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
-            $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
-            if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
 
-            $arch   = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
-            $msiUrl = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
-            $msiPath = Join-Path $env:TEMP "nodejs22.msi"
+        # If nvm is available use it — avoids npm config conflicts from mixed installs
+        if (Get-Command nvm -ErrorAction SilentlyContinue) {
+            Write-Host "  nvm detected — installing Node.js 22 via nvm..." -ForegroundColor Gray
+            nvm install 22
+            nvm use 22
+            Refresh-Path
+            $newVer   = (node --version 2>$null) -replace '^v', ''
+            $newMajor = [int]($newVer.Split('.')[0])
+            if ($newMajor -ge 22) {
+                Write-Ok "Node.js switched to v$newVer via nvm"
+            } else {
+                Write-Warn "nvm install succeeded but needs a new terminal to take effect"
+                $script:needsRestart = $true
+            }
+        } else {
+            # Direct MSI install from nodejs.org
+            Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
+            try {
+                $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+                $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
+                if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
 
-            Write-Host "  Downloading Node.js $($node22.version)..." -ForegroundColor Gray
-            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+                $arch    = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+                $msiUrl  = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
+                $msiPath = Join-Path $env:TEMP "nodejs22.msi"
 
-            Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
-            Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart" -Verb RunAs -Wait
-            Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+                Write-Host "  Downloading Node.js $($node22.version)..." -ForegroundColor Gray
+                Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
 
-            Write-Ok "Node.js $($node22.version) installed"
-        } catch {
-            Write-Warn "Auto-install failed: $($_.Exception.Message)"
-            Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
+                Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
+                Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart" -Verb RunAs -Wait
+                Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+
+                Write-Ok "Node.js $($node22.version) installed"
+            } catch {
+                Write-Warn "Auto-install failed: $($_.Exception.Message)"
+                Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
+            }
+            $script:needsRestart = $true
         }
-        $script:needsRestart = $true
     }
 }
 
@@ -205,7 +223,19 @@ $ErrorActionPreference = "Continue"
 npm install
 $npmExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($npmExit -ne 0) { throw "npm install failed." }
+if ($npmExit -ne 0) {
+    $npmLog = (npm config get cache 2>$null)
+    $logDir = if ($npmLog) { Join-Path $npmLog "_logs" } else { $null }
+    if ($logDir -and (Test-Path $logDir)) {
+        $latest = Get-ChildItem $logDir -Filter "*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($latest) {
+            Write-Host ""
+            Write-Host "  npm error log ($($latest.Name)):" -ForegroundColor Gray
+            Get-Content $latest.FullName | Select-String "^[0-9]+ error " | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+        }
+    }
+    throw "npm install failed."
+}
 Write-Ok "Dependencies installed"
 
 Write-Host "  Building..." -ForegroundColor Gray
