@@ -1,10 +1,9 @@
 /**
- * Squad host — pwagent's entry into GitHub Copilot CLI.
+ * Squad host — pwagent's entry into the Squad chat shell.
  *
- * Why: Copilot CLI provides the chat UX we want — banner, slash-command
- * autocomplete, persistent session, native streaming, multi-line input.
- * Squad (@bradygaster/squad-cli) orchestrates multi-agent workflows on top
- * of it. We don't build a custom chat REPL: we delegate.
+ * Why: Squad (@bradygaster/squad-cli) provides the chat UX we want — banner,
+ * slash-command autocomplete, persistent session, native streaming, multi-line
+ * input. We don't build a custom chat REPL: we delegate.
  *
  * Directory strategy:
  *   - `.pwagent/`  is the **canonical, user-facing** content directory.
@@ -14,16 +13,17 @@
  *                  so we keep that working for compatibility. Add `.squad/`
  *                  to .gitignore — it's regenerated.
  *
+ * Branding: Squad reads `squad.brand.json` in the cwd and respects
+ * `SQUAD_BRAND_*` env vars. No runtime patching of compiled files needed.
+ *
  * Flow:
  *   1. `pwagent` (no args, TTY) → ensure .pwagent/ exists (scaffold from
  *      embedded content if missing) → mirror .pwagent/ → .squad/ → spawn
- *      `npx @bradygaster/squad-cli`.
- *   2. Squad reads .squad/, hands off to Copilot CLI with our 13 agents
- *      pre-loaded.
+ *      squad-cli with SQUAD_BRAND_* env vars.
+ *   2. Squad reads .squad/, loads our 13 agents pre-loaded.
  *
  * `pwagent run <agent>` remains as the CI / unattended path. It uses
- * pwagent's own coordinator + SDK adapter — no Copilot CLI dependency on
- * CI runners.
+ * pwagent's own coordinator + SDK adapter — no Squad dependency on CI runners.
  */
 
 import { spawn } from "node:child_process";
@@ -44,74 +44,6 @@ function findSquadCliRoot(): string | undefined {
     return dirname(pkgPath);
   } catch {
     return undefined;
-  }
-}
-
-/**
- * Rebrand Squad CLI's shell components in place so the user sees pwagent
- * everywhere instead of squad. Two strings live in compiled React (Ink)
- * components and aren't otherwise configurable:
- *   - banner text "SQUAD" → "PWAGENT"
- *   - prompt label "squad>" / "sq>" → "pwagent>" / "pw>"
- *
- * The patch is **idempotent** — on each launch we check whether the strings
- * still exist, only writing if they do. If npm reinstalls Squad and wipes our
- * patches, the next `pwagent` invocation reapplies them.
- *
- * Risk: Squad's UI surface changes across versions. We detect "didn't find
- * any of the expected patterns" and skip silently rather than crashing.
- */
-async function rebrandSquadShell(verbose = false): Promise<void> {
-  const root = findSquadCliRoot();
-  if (!root) {
-    if (verbose) console.log(c.dim("  rebrand: squad-cli not resolvable from here"));
-    return;
-  }
-  if (verbose) console.log(c.dim(`  rebrand: patching ${root}`));
-
-  const targets: Array<{ path: string; replacements: Array<[RegExp, string]> }> = [
-    {
-      path: join(root, "dist", "cli", "shell", "components", "App.js"),
-      replacements: [
-        [/children: "SQUAD"/g, 'children: "PWAGENT"'],
-        [/children: \["SQUAD v"/g, 'children: ["PWAGENT v"'],
-      ],
-    },
-    {
-      path: join(root, "dist", "cli", "shell", "components", "InputPrompt.js"),
-      replacements: [
-        [/'◆ squad> '/g, "'◆ pwagent> '"],
-        [/'sq> '/g, "'pw> '"],
-      ],
-    },
-  ];
-
-  for (const t of targets) {
-    if (!existsSync(t.path)) {
-      if (verbose) console.log(c.dim(`    skip: ${t.path} (not found)`));
-      continue;
-    }
-    try {
-      let src = await readFile(t.path, "utf8");
-      let changed = false;
-      const hits: string[] = [];
-      for (const [pat, repl] of t.replacements) {
-        if (pat.test(src)) {
-          src = src.replace(pat, repl);
-          changed = true;
-          hits.push(pat.source);
-        }
-      }
-      if (changed) {
-        await writeFile(t.path, src, "utf8");
-        if (verbose) console.log(c.dim(`    patched: ${t.path} (${hits.length} patterns)`));
-      } else if (verbose) {
-        console.log(c.dim(`    ok:      ${t.path} (already patched or new layout)`));
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (verbose) console.log(c.dim(`    fail:    ${t.path} (${msg})`));
-    }
   }
 }
 
@@ -217,13 +149,8 @@ async function ensureScaffolding(cwd: string): Promise<void> {
 export async function startSquadShell(cwd: string): Promise<number> {
   await ensureScaffolding(cwd);
   await ensureCoordinatorManifest(cwd);
-  // Verbose during pivot phase so the user can see exactly what's being
-  // patched; flip to silent once the rebrand is stable across squad-cli versions.
-  await rebrandSquadShell(true);
-
-  // Resolve squad-cli's binary entry **before** spawning so we run the exact
-  // copy we just patched. Using `npx` may resolve to a different installation
-  // (global, npx cache) where our patches don't exist.
+  // Resolve squad-cli's binary entry directly so we avoid .cmd-shim issues
+  // and npx resolving a different (global/cached) installation.
   const squadCliRoot = findSquadCliRoot();
   let squadCliEntry: string | undefined;
   if (squadCliRoot) {
@@ -235,42 +162,55 @@ export async function startSquadShell(cwd: string): Promise<number> {
     console.error(
       c.err("  squad-cli binary not found — falling back to `npx @bradygaster/squad-cli`"),
     );
-    console.error(c.dim("  → patches may not apply to the npx-resolved copy"));
   } else {
     console.log(c.dim(`  squad-cli: ${squadCliEntry}`));
   }
 
-  console.log(c.dim("  launching GitHub Copilot CLI via Squad…"));
+  console.log(c.dim("  launching Squad shell…"));
   console.log();
+
+  // Branding env vars — Squad reads squad.brand.json from cwd automatically,
+  // but env vars are the authoritative layer and work even if the file is absent.
+  const brandEnv = {
+    SQUAD_BRAND_NAME: "pwagent",
+    SQUAD_BRAND_NAME_UPPER: "PWAGENT",
+    SQUAD_BRAND_PROMPT: "◆ pwagent> ",
+    SQUAD_BRAND_NARROW_PROMPT: "pw> ",
+    SQUAD_BRAND_ACCENT: "magenta",
+    SQUAD_BRAND_BANNER_BORDER_STYLE: "round",
+    SQUAD_BRAND_BANNER_BORDER_COLOR: "magenta",
+    SQUAD_BRAND_TAGLINE: "Multi-agent Playwright testing — Squad design, GitHub Copilot SDK runtime",
+    SQUAD_BRAND_ISSUES_URL: "github.com/microsoft/pwagent",
+    SQUAD_BRAND_COORDINATOR: "pwagent",
+    SQUAD_HOST: "pwagent",
+  };
 
   return await new Promise<number>((resolvePromise) => {
     const isWin = process.platform === "win32";
 
     let child;
     if (squadCliEntry) {
-      // Direct node spawn — same copy we patched, no .cmd-shim issues, no
-      // npx-cache surprises.
+      // Direct node spawn — no .cmd-shim issues, no npx-cache surprises.
       child = spawn(process.execPath, [squadCliEntry], {
         cwd,
         stdio: "inherit",
-        env: { ...process.env, SQUAD_HOST: "pwagent" },
+        env: { ...process.env, ...brandEnv },
         shell: false,
       });
     } else {
-      // Fallback: npx (may not see our patches). On Windows, npx is a .cmd
-      // shim and Node ≥18.20.2/20.12.2/21.7.3 refuses to spawn .cmd files
-      // without shell: true (CVE-2024-27980).
+      // Fallback: npx. On Windows, npx is a .cmd shim and Node ≥18.20.2
+      // refuses to spawn .cmd files without shell: true (CVE-2024-27980).
       child = isWin
         ? spawn("npx @bradygaster/squad-cli", {
             cwd,
             stdio: "inherit",
-            env: { ...process.env, SQUAD_HOST: "pwagent" },
+            env: { ...process.env, ...brandEnv },
             shell: true,
           })
         : spawn("npx", ["@bradygaster/squad-cli"], {
             cwd,
             stdio: "inherit",
-            env: { ...process.env, SQUAD_HOST: "pwagent" },
+            env: { ...process.env, ...brandEnv },
             shell: false,
           });
     }
