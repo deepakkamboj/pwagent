@@ -1,115 +1,231 @@
 # pwagent installer
 # Usage: iex "& { $(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }"
+#
+# This script:
+#   1. Checks/installs prerequisites (Node.js 22+, git, GitHub CLI)
+#   2. Authenticates GitHub CLI
+#   3. Clones / updates pwagent
+#   4. Installs dependencies, builds, and links the 'pwagent' command globally
 
-$ErrorActionPreference = 'Stop'
+param(
+    [ValidateSet("stable", "dev")]
+    [string]$Channel = "stable"
+)
 
-Write-Host ""
-Write-Host "  Installing pwagent..." -ForegroundColor Magenta
-Write-Host ""
+$ErrorActionPreference = "Stop"
+$script:needsRestart = $false
+$branch = if ($Channel -eq "dev") { "dev" } else { "main" }
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+function Write-Step($n, $total, $msg) { Write-Host "`n-- Step $n/$total : $msg --" -ForegroundColor Cyan }
+function Write-Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
+function Write-Warn($msg) { Write-Host "  [!!] $msg" -ForegroundColor Yellow }
+function Write-Err($msg)  { Write-Host "  [FAIL] $msg" -ForegroundColor Red }
+
 function Refresh-Path {
-    $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
-                [System.Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("PATH", "User")
 }
 
-function Get-NodeMajor {
-    $node = Get-Command node -ErrorAction SilentlyContinue
-    if (-not $node) { return 0 }
-    $ver = (node --version 2>$null) -replace 'v', ''
-    return [int]($ver.Split('.')[0])
+function Test-Command($cmd) {
+    try { & $cmd --version 2>$null | Out-Null; return $true } catch { return $false }
 }
 
-# ── Node 22+ ──────────────────────────────────────────────────────────────────
-$nodeMajor = Get-NodeMajor
-if ($nodeMajor -lt 22) {
-    if ($nodeMajor -eq 0) {
-        Write-Host "  Node.js not found — installing..." -ForegroundColor Cyan
+function Install-Prereq($name, $wingetId, $required) {
+    if (Test-Command $name) {
+        $ver = (& $name --version 2>$null) | Select-Object -First 1
+        Write-Ok "$name -- $ver"
+        return "ok"
+    }
+
+    $label = if ($required) { "Required" } else { "Recommended" }
+    Write-Warn "$name not found ($label)"
+
+    $answer = Read-Host "  Install $name via winget? [Y/n]"
+    if ($answer -and $answer -notmatch "^[Yy]") {
+        if ($required) {
+            Write-Err "$name is required. Install manually: winget install $wingetId"
+            return "failed"
+        }
+        Write-Host "  Skipped." -ForegroundColor Gray
+        return "skipped"
+    }
+
+    Write-Host "  Installing $name..." -ForegroundColor Gray
+    $ok = $false
+    try {
+        winget install --id $wingetId -e --accept-source-agreements --accept-package-agreements 2>$null
+        Refresh-Path
+        $ok = $true
+    } catch { $ok = $false }
+
+    if ($ok -and (Test-Command $name)) {
+        $ver = (& $name --version 2>$null) | Select-Object -First 1
+        Write-Ok "$name installed -- $ver"
+        return "ok"
+    } elseif ($ok) {
+        Write-Warn "$name installed but not yet visible on PATH"
+        return "restart"
     } else {
-        Write-Host "  Node.js $nodeMajor found — upgrading to LTS 22+..." -ForegroundColor Cyan
+        Write-Err "Failed to install $name. Install manually: winget install $wingetId"
+        return if ($required) { "failed" } else { "skipped" }
     }
-
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "  [ERROR] winget not found. Install Node.js 22+ manually: https://nodejs.org" -ForegroundColor Red
-        exit 1
-    }
-
-    winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements --silent
-    Refresh-Path
-
-    $nodeMajor = Get-NodeMajor
-    if ($nodeMajor -lt 22) {
-        Write-Host ""
-        Write-Host "  Node.js installed but not yet in PATH." -ForegroundColor Yellow
-        Write-Host "  Please open a new terminal and re-run the installer:" -ForegroundColor Yellow
-        Write-Host "    iex `"& { `$(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }`"" -ForegroundColor Gray
-        exit 0
-    }
-
-    Write-Host "  Node.js $(node --version) ready." -ForegroundColor Green
 }
 
-# ── git ───────────────────────────────────────────────────────────────────────
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "  git not found — installing..." -ForegroundColor Cyan
+# ── Header ────────────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "  pwagent -- Installer" -ForegroundColor Magenta
+Write-Host "  ====================" -ForegroundColor Magenta
+Write-Host "  Channel: $Channel (branch: $branch)" -ForegroundColor Magenta
+Write-Host ""
 
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "  [ERROR] winget not found. Install git manually: https://git-scm.com" -ForegroundColor Red
-        exit 1
+# ── Step 1: Prerequisites ─────────────────────────────────────────────────────
+Write-Step 1 4 "Prerequisites"
+
+# Node.js (required)
+$nodeResult = Install-Prereq "node" "OpenJS.NodeJS.LTS" $true
+if ($nodeResult -eq "failed") { exit 1 }
+if ($nodeResult -eq "restart") { $script:needsRestart = $true }
+
+# Verify Node.js >= 22; upgrade if too old
+if ($nodeResult -eq "ok") {
+    $nodeVer = (node --version 2>$null) -replace '^v', ''
+    $major   = [int]($nodeVer.Split('.')[0])
+    if ($major -lt 22) {
+        Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
+        Write-Host "  Upgrading via winget..." -ForegroundColor Gray
+        try {
+            winget upgrade --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements 2>$null
+            Refresh-Path
+            $newVer   = (node --version 2>$null) -replace '^v', ''
+            $newMajor = [int]($newVer.Split('.')[0])
+            if ($newMajor -ge 22) {
+                Write-Ok "Node.js upgraded to v$newVer"
+            } else {
+                Write-Warn "Node.js upgraded but not yet on PATH"
+                $script:needsRestart = $true
+            }
+        } catch {
+            Write-Warn "Upgrade failed. Run manually: winget upgrade OpenJS.NodeJS.LTS"
+            $script:needsRestart = $true
+        }
     }
-
-    winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements --silent
-    Refresh-Path
-
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-Host ""
-        Write-Host "  git installed but not yet in PATH." -ForegroundColor Yellow
-        Write-Host "  Please open a new terminal and re-run the installer." -ForegroundColor Yellow
-        exit 0
-    }
-
-    Write-Host "  git $(git --version) ready." -ForegroundColor Green
 }
 
-# ── clone / update pwagent ────────────────────────────────────────────────────
+# git (required)
+$gitResult = Install-Prereq "git" "Git.Git" $true
+if ($gitResult -eq "failed") { exit 1 }
+if ($gitResult -eq "restart") { $script:needsRestart = $true }
+
+# GitHub CLI (required for Copilot authentication)
+$ghResult = Install-Prereq "gh" "GitHub.cli" $true
+if ($ghResult -eq "failed") { exit 1 }
+if ($ghResult -eq "restart") { $script:needsRestart = $true }
+
+# ── Restart gate ──────────────────────────────────────────────────────────────
+if ($script:needsRestart) {
+    Write-Host ""
+    Write-Host "  +------------------------------------------------------+" -ForegroundColor Yellow
+    Write-Host "  |  Some tools were installed but aren't on PATH yet.    |" -ForegroundColor Yellow
+    Write-Host "  |                                                        |" -ForegroundColor Yellow
+    Write-Host "  |  Please:                                               |" -ForegroundColor Yellow
+    Write-Host "  |    1. Close this terminal                              |" -ForegroundColor Yellow
+    Write-Host "  |    2. Open a NEW terminal                              |" -ForegroundColor Yellow
+    Write-Host "  |    3. Re-run the installer -- it will pick up here.    |" -ForegroundColor Yellow
+    Write-Host "  |                                                        |" -ForegroundColor Yellow
+    Write-Host '  |  iex "& { $(irm https://raw.githubusercontent.com' -ForegroundColor Gray
+    Write-Host '  |    /deepakkamboj/pwagent/main/install.ps1) }"' -ForegroundColor Gray
+    Write-Host "  |                                                        |" -ForegroundColor Yellow
+    Write-Host "  +------------------------------------------------------+" -ForegroundColor Yellow
+    Write-Host ""
+    exit 0
+}
+
+# ── Step 2: GitHub Authentication ─────────────────────────────────────────────
+Write-Step 2 4 "GitHub Authentication"
+
+$authOk = $false
+try { gh auth status 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $authOk = $true } } catch {}
+
+if ($authOk) {
+    Write-Ok "GitHub CLI already authenticated"
+} else {
+    Write-Host "  GitHub CLI needs authentication -- a browser window will open." -ForegroundColor Yellow
+    Write-Host ""
+    gh auth login
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Authentication failed. Run 'gh auth login' manually then re-run this script."
+        exit 1
+    }
+    Write-Ok "GitHub CLI authenticated"
+}
+
+# ── Step 3: Clone / update pwagent ────────────────────────────────────────────
+Write-Step 3 4 "Clone pwagent"
+
 $installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
 New-Item -ItemType Directory -Force -Path (Split-Path $installDir) | Out-Null
 
-Write-Host "  Setting up pwagent..." -ForegroundColor Cyan
 if (Test-Path (Join-Path $installDir ".git")) {
+    Write-Host "  Updating existing clone..." -ForegroundColor Gray
     Push-Location $installDir
+    git checkout $branch 2>$null
     git pull --ff-only
     Pop-Location
+    Write-Ok "pwagent updated ($installDir)"
 } else {
-    git clone https://github.com/deepakkamboj/pwagent.git $installDir
+    Write-Host "  Cloning pwagent..." -ForegroundColor Gray
+    git clone --branch $branch https://github.com/deepakkamboj/pwagent.git $installDir
+    Write-Ok "pwagent cloned to $installDir"
 }
 
-# ── install deps (pulls squad packages from GitHub fork automatically) ────────
-Write-Host "  Installing dependencies..." -ForegroundColor Cyan
-Push-Location $installDir
-npm install --silent
-
-# ── copy config files to ~/.pwagent/ (skip if already present) ───────────────
+# Copy config files to ~/.pwagent/ (skip if already customised)
 $globalDir = Join-Path $env:USERPROFILE ".pwagent"
 New-Item -ItemType Directory -Force -Path $globalDir | Out-Null
-
 foreach ($file in @("squad.brand.json", "squad.schedule.json", "pwagent.config.example.json")) {
     $src  = Join-Path $installDir $file
     $dest = Join-Path $globalDir $file
     if ((Test-Path $src) -and -not (Test-Path $dest)) {
         Copy-Item $src $dest
-        Write-Host "  Copied $file to $globalDir" -ForegroundColor Gray
+        Write-Ok "Copied $file -> $globalDir"
     }
 }
 
-# ── build and link ────────────────────────────────────────────────────────────
-Write-Host "  Building..." -ForegroundColor Cyan
-npm run build --workspace cli --silent
+# ── Step 4: Install, Build, Link ──────────────────────────────────────────────
+Write-Step 4 4 "Install, Build, and Link"
+
+Push-Location $installDir
+
+Write-Host "  Running npm install (fetches squad packages from GitHub fork)..." -ForegroundColor Gray
+$ErrorActionPreference = "Continue"
+npm install
+$npmExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($npmExit -ne 0) { Write-Err "npm install failed. Check the output above."; exit 1 }
+Write-Ok "Dependencies installed"
+
+Write-Host "  Building..." -ForegroundColor Gray
+$ErrorActionPreference = "Continue"
+npm run build --workspace cli
+$buildExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($buildExit -ne 0) { Write-Err "Build failed. Check the output above."; exit 1 }
+Write-Ok "Build complete"
+
+Write-Host "  Linking 'pwagent' command globally..." -ForegroundColor Gray
+$ErrorActionPreference = "Continue"
 npm link --workspace cli
+$linkExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($linkExit -ne 0) { Write-Err "npm link failed. Try running as Administrator."; exit 1 }
+Write-Ok "'pwagent' command linked globally"
+
 Pop-Location
 
+# ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "  pwagent installed!" -ForegroundColor Green
+Write-Host "  +------------------------------------------+" -ForegroundColor Green
+Write-Host "  |  pwagent installed successfully!         |" -ForegroundColor Green
+Write-Host "  +------------------------------------------+" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Installed to: $installDir" -ForegroundColor Gray
 Write-Host ""
