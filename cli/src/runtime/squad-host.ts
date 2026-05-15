@@ -153,12 +153,22 @@ async function ensureScaffolding(cwd: string): Promise<void> {
     await cp(join(embedded, "skills"), join(pwagentDir, "skills"), { recursive: true });
   }
 
-  // Top-level md files: write only if missing (preserve user edits).
-  for (const file of ["routing.md", "team.md", "ceremonies.md", "master-prompt.md"]) {
-    if (existsSync(join(pwagentDir, file))) continue;
+  // Managed files (team.md, routing.md, master-prompt.md) are owned by pwagent
+  // and must always be refreshed so new agents/rules appear after upgrades.
+  for (const file of ["routing.md", "team.md", "master-prompt.md"]) {
     try {
       const content = await readFile(join(embedded, file), "utf8");
       await writeFile(join(pwagentDir, file), content, "utf8");
+    } catch {
+      /* skip missing source file */
+    }
+  }
+
+  // ceremonies.md is user-customisable — write only if missing.
+  if (!existsSync(join(pwagentDir, "ceremonies.md"))) {
+    try {
+      const content = await readFile(join(embedded, "ceremonies.md"), "utf8");
+      await writeFile(join(pwagentDir, "ceremonies.md"), content, "utf8");
     } catch {
       /* skip missing source file */
     }
