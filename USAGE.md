@@ -11,6 +11,10 @@ This is the **practical** guide. For architecture and reference material, see [d
 - [The 13 agents — what to type at each one](#the-13-agents--what-to-type-at-each-one)
 - [Skill packs — when each is auto-injected](#skill-packs--when-each-is-auto-injected)
 - [End-to-end workflows](#end-to-end-workflows)
+- [Task playbooks](#task-playbooks)
+  - [Task 1 — On-demand test execution in the dev inner loop](#task-1--on-demand-test-execution-in-the-dev-inner-loop)
+  - [Task 2 — Agent-based monitoring and automated failure triage](#task-2--agent-based-monitoring-and-automated-failure-triage)
+  - [Task 3 — On-the-fly test authoring and execution for changes](#task-3--on-the-fly-test-authoring-and-execution-for-changes)
 - [Working with the portal](#working-with-the-portal)
 - [Scheduler recipes](#scheduler-recipes)
 - [Tips & gotchas](#tips--gotchas)
@@ -554,6 +558,290 @@ pwagent run analyze --test-quality --files "tests/checkout/**" --severity-min Hi
 
 # File one bug per rule for medium-and-up findings
 pwagent run analyze --test-quality --files "tests/**/*.spec.ts" --severity-min Medium --file-bug
+```
+
+---
+
+## Task playbooks
+
+These playbooks map the three core engineering tasks to exact agent invocations — chat (`›`) and shell (`$`) side by side.
+
+---
+
+### Task 1 — On-demand test execution in the dev inner loop
+
+**Goal:** When an agent fixes a bug, automatically select and run only the tests that validate that specific fix — not the full suite. Start with the ~60 weekly/nightly blockers; expand from there.
+
+#### Step-by-step in chat
+
+```
+› @pwagent-triage --run-id <run-id>
+  Classify the failure. Produces a verdict (ProductBug / TestCodeBug) + artifact.
+
+› @pwagent-review
+  Stamp the verdict [p] or [t] to unlock fix.
+
+› @pwagent-fix --from-triage <run-id>
+  Patch the failing test or product code. The agent selects the narrowest
+  scope — it reads the triage artifact to identify affected files, then
+  runs only the tests that exercise those files.
+
+› @pwagent-validate --test <spec-file> --repeat 2
+  Run the targeted test twice to confirm two greens before the PR is opened.
+
+› @pwagent-publish --branch pwagent/fix/<id> --target main --bug AB#<id>
+  Open the PR with ArtifactLink back to the bug.
+```
+
+#### Step-by-step from shell (CI / scripted)
+
+```bash
+# 1. Classify one failure
+$ pwagent run triage --run-id 89211
+
+# 2. Auto-stamp (CI mode, no human pause)
+$ pwagent review --batch <<< "89211 t"
+
+# 3. Patch + targeted test run in one call
+$ pwagent run fix --from-triage 89211
+#   → reads verdict, patches narrowest scope, runs validate --test automatically
+
+# 4. Validate the specific test twice explicitly
+$ pwagent run validate --test tests/checkout/upsell.spec.ts --repeat 2
+
+# 5. Open PR
+$ pwagent run publish --branch pwagent/fix/AB89211 --target main --bug AB#89211 --results ./fix-results.json
+```
+
+#### Fully automated (single command)
+
+```bash
+# Fix the bug, validate targeted tests, open PR — no human in the loop
+$ pwagent run fix --orchestrate --bug AB#89211 --auto-stamp
+
+# For a batch of the ~60 blocker bugs
+$ pwagent run fix --orchestrate --bugs --top 60 --area "OneCRM\\UnifiedClient\\Tests" --auto-stamp --max-failures 60
+```
+
+#### Scheduler recipe — run on every new nightly failure
+
+```json
+{
+  "id": "nightly-inner-loop",
+  "name": "Nightly blocker fix",
+  "description": "Fix up to 60 blocker failures from nightly, targeted test validation only.",
+  "cron": "0 6 * * 1-5",
+  "agent": "fix",
+  "args": "--orchestrate --ado-pipeline 23878 --max-failures 60 --auto-stamp",
+  "enabled": true,
+  "maxRunSeconds": 3600
+}
+```
+
+#### Useful prompts for refining test selection
+
+```
+› @pwagent-analyze which tests cover the files changed in bug AB#89211?
+› @pwagent-triage build a map of the top 60 blocker bugs to the test files that exercise them
+› @pwagent-supervisor for each of the 60 nightly blockers, triage and identify the single most relevant test
+```
+
+---
+
+### Task 2 — Agent-based monitoring and automated failure triage
+
+**Goal:** Continuously watch nightly/weekly runs. When failures appear, auto-triage, classify (environment / test code / product), create work items with logs, route to the right team, and improve accuracy over time using historical patterns.
+
+#### Continuous monitoring in chat
+
+```
+› @pwagent-discover --watch --poll-seconds 300 --source ado --pipeline 23878
+  Start the daemon. It polls every 5 min; when a new failure appears it
+  dispatches triage automatically and returns a work-item draft.
+
+› @pwagent-discover --watch --status
+  Check how many failures have been dispatched this session.
+
+› @pwagent-triage --run-id <id>
+  Manually triage any specific run.
+
+› @pwagent-report --kind triage --window 7d
+  Review classification accuracy over the last week.
+```
+
+#### Continuous monitoring from shell
+
+```bash
+# Start the polling daemon (foreground — use scheduler for unattended)
+$ pwagent run discover --watch --source ado --pipeline 23878 --poll-seconds 300
+
+# One-shot scan of a completed nightly run
+$ pwagent run discover --source ado --pipeline 23878 --build <build-id>
+
+# Triage every failure found (fan-out, parallel)
+$ pwagent run triage --run-id <run-id>
+
+# Create ADO work items for classified failures (ProductBug → Bug, Environment → Task)
+$ pwagent run record --kind matrix --op import --source ado --bug-ids <id1>,<id2>,...
+
+# Route to correct team via ADO area path — set in config
+$ pwagent run publish --branch pwagent/triage/<run-id> --target main
+```
+
+#### Fully automated monitoring pipeline
+
+```bash
+# Full chain: discover → triage (fan-out) → record work items → notify via report
+$ pwagent run fix --orchestrate --ado-pipeline 23878 --auto-stamp --json | \
+    tee ~/.pwagent/runs/latest.jsonl
+
+# Or use the orchestrator directly for monitoring-only (no fix, no PR)
+$ pwagent run discover --source ado --pipeline 23878 --window 1d
+$ pwagent run triage --artifact ~/.pwagent/runs/latest/failures.json
+$ pwagent run record --kind matrix --op import --source ado --bug-ids $(cat ./new-bug-ids.txt)
+$ pwagent run report --kind triage --window 1d --commit
+```
+
+#### Scheduler recipes — nightly + weekly monitoring
+
+```json
+{
+  "id": "nightly-monitor",
+  "name": "Nightly failure monitor",
+  "description": "Scan nightly run, triage all failures, create work items.",
+  "cron": "0 7 * * 1-5",
+  "agent": "discover",
+  "args": "--source ado --pipeline 23878 --window 1d",
+  "enabled": true,
+  "maxRunSeconds": 1800
+}
+```
+
+```json
+{
+  "id": "weekly-triage-report",
+  "name": "Weekly triage accuracy report",
+  "description": "Report on classification accuracy + team routing for the week.",
+  "cron": "0 8 * * 1",
+  "agent": "report",
+  "args": "--kind triage --window 7d --commit",
+  "enabled": true,
+  "maxRunSeconds": 600
+}
+```
+
+#### Prompts for improving triage accuracy over time
+
+```
+› @pwagent-analyze --flakes --pipeline 23878 --top 20 --window 30d
+  Surface tests with the worst historical stability — triage these as
+  likely TestCodeBug before even running them.
+
+› @pwagent-report what percentage of last month's triage verdicts were overturned at review?
+
+› @pwagent-report show me Environment failures grouped by the infrastructure component
+  that was failing — I want to route them to the right on-call team.
+
+› @pwagent-triage build a routing table: for each of the top 10 error signatures
+  this week, which team should own the work item?
+```
+
+---
+
+### Task 3 — On-the-fly test authoring and execution for changes
+
+**Goal:** When no existing test covers a bug or code change, automatically generate a targeted test, execute it to validate the fix, and integrate it into the existing framework — without manual test writing.
+
+#### Authoring tests in chat
+
+```
+› @pwagent-analyze --scenarios --path src/checkout
+  Find untested branches and flows in the changed area.
+  Produces ScenarioGap-NNNN rows.
+
+› @pwagent-author write a test for the gap where a logged-in user removes a coupon
+  and the cart total doesn't update until page refresh
+  Generate a spec using the workspace's existing POM and fixture patterns.
+
+› @pwagent-validate --test tests/checkout/coupon-removal.generated.spec.ts --repeat 2
+  Execute the new test twice. Two greens = ready to promote.
+
+› @pwagent-review
+  Stamp the generated test [t] to start the 7-day probation clock.
+
+› @pwagent-publish --branch pwagent/author/coupon-removal --target main --draft
+  Open a draft PR for human review of the new test.
+```
+
+#### Authoring tests from shell
+
+```bash
+# 1. Find coverage gaps in the changed area
+$ pwagent run analyze --scenarios --path src/checkout --min-coverage 70
+
+# 2. Author a test for a specific gap
+$ pwagent run author "logged-in user removes a coupon — cart total must update immediately without a page refresh"
+
+# 3. Author from a specific ScenarioGap row
+$ pwagent run author --from-gap ScenarioGap-0042
+
+# 4. Author targeting a coverage path
+$ pwagent run author --coverage-gap "checkout/payment-methods/apple-pay"
+
+# 5. Execute the generated test (twice)
+$ pwagent run validate --test tests/checkout/coupon-removal.generated.spec.ts --repeat 2
+
+# 6. Open draft PR
+$ pwagent run publish --branch pwagent/author/coupon-removal --target main --draft
+```
+
+#### Integrated authoring inside a fix workflow
+
+```bash
+# Fix a bug AND author any missing test for it in one orchestrated call
+$ pwagent run fix --orchestrate --bug AB#54321 --auto-stamp
+#   If fix finds no existing test to validate against, it hands off to
+#   author to generate one before validate runs.
+
+# Author the top 5 untested flows from this sprint's coverage sweep
+$ pwagent run analyze --scenarios --path src/account
+$ pwagent run plan --from-scenario
+$ pwagent run author --from-gap ScenarioGap-0001
+$ pwagent run author --from-gap ScenarioGap-0002
+$ pwagent run author --from-gap ScenarioGap-0003
+```
+
+#### Scheduler recipe — nightly coverage author
+
+```json
+{
+  "id": "nightly-author",
+  "name": "Nightly gap authoring",
+  "description": "Find top 3 untested flows nightly and author specs for them.",
+  "cron": "0 3 * * 1-5",
+  "agent": "analyze",
+  "args": "--scenarios --path src --min-coverage 80 --fail-on-critical",
+  "enabled": true,
+  "maxRunSeconds": 1800
+}
+```
+
+#### Prompts for improving generation quality over time
+
+```
+› @pwagent-analyze --test-quality --files "tests/**/*.generated.spec.ts" --severity-min Medium
+  Grade all generated specs against the 5-rubric quality rubric.
+
+› @pwagent-record --kind patterns --from ./fix-results.json
+  Distill successful fix+author cycles into reusable FixPatterns so future
+  authoring uses proven locator and assertion patterns.
+
+› @pwagent-report show me the probation pass rate for generated tests over the last 30 days
+  — which scenario types are failing review most often?
+
+› @pwagent-author the last 3 generated tests for checkout all failed review because they
+  used CSS selectors instead of getByRole — regenerate ScenarioGap-0044 using only
+  ARIA-based locators and the existing CheckoutPage POM
 ```
 
 ---
