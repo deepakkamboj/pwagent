@@ -20,9 +20,9 @@ This is the **practical** guide. For architecture and reference material, see [d
 
 ## Mental model in 60 seconds
 
-- **`pwagent` opens GitHub Copilot CLI** with our 13 agents pre-loaded via Squad. The chat UX is Copilot CLI's native interface — banner, slash-command autocomplete, persistent session, syntax highlighting, multi-line input. We don't build a custom REPL.
-- On first run in a workspace, pwagent scaffolds a **`.pwagent/`** directory (canonical content) from its embedded charters, then mirrors it to **`.squad/`** (Squad CLI hardcodes that path). User edits go in `.pwagent/`; `.squad/` is regenerated on every launch.
-- For **CI / scheduled runs**, the headless form `pwagent run <agent>` is still available. It uses pwagent's own coordinator + SDK — no Copilot CLI dependency on CI runners.
+- **`pwagent` opens the Squad chat shell** — an Ink TUI with PWAGENT banner, categorised agent roster, `@agent` routing, `/` slash-command suggestion box, and streaming responses. Squad (`@bradygaster/squad-cli`) provides the UI; we pass our 13 agents via `.squad/`.
+- On first run in a workspace, pwagent scaffolds a **`.pwagent/`** directory (canonical content) from its embedded charters, then mirrors it to **`.squad/`** (Squad CLI reads that path). User edits go in `.pwagent/`; `.squad/` is regenerated on every launch.
+- For **CI / scheduled runs**, the headless form `pwagent run <agent>` is still available. It uses pwagent's own coordinator + SDK — no Squad dependency on CI runners.
 - Each agent is a Markdown **charter** with stable sections (Identity, Responsibilities, Boundaries, Tools, Model). Read one with `pwagent agents show <name>` from a shell, or browse inside Copilot CLI once chat is open.
 - Multi-purpose agents specialize via flags: `fix --scope test|product`, `validate --test|--a11y`, `discover --watch`, `analyze --scenarios|--flakes|--test-quality`, `record --kind matrix|patterns`.
 - Skills are **side knowledge** the coordinator injects automatically based on what you typed. You usually don't pick them; you can override with `--skills`.
@@ -35,21 +35,22 @@ This is the **practical** guide. For architecture and reference material, see [d
 
 ### From chat (daily driver)
 
-`pwagent` spawns Squad → GitHub Copilot CLI with `.pwagent/`-loaded agents:
+`pwagent` spawns `@bradygaster/squad-cli` with `.pwagent/`-loaded agents:
 
 ```
-pwagent                                       # opens Copilot CLI via Squad
+pwagent                                       # opens Squad TUI
 ```
 
-Inside Copilot CLI, use its native slash commands (`/help`, `/clear`, `/quit`, `/update`, etc.) or invoke a specialist by name:
+Inside the Squad shell, type free text (supervisor routes it) or address an agent directly with `@`:
 
 ```
-› fix everything red in pipeline 23878        # free text → Squad's router picks fix
-› /fix --orchestrate --ado-pipeline 23878     # direct one-shot specialist call
-› /triage --run-id 89211
-› /analyze --flakes --pipeline 23878 --top 10
-› /author --scenario "logged-in user applies a coupon"
+› fix everything red in pipeline 23878           # free text → supervisor routes to fix
+› @pwagent-fix --orchestrate --ado-pipeline 23878  # direct agent addressing
+› @pwagent-triage --run-id 89211
+› @pwagent-analyze --flakes --pipeline 23878 --top 10
 ```
+
+Built-in slash commands: `/status`, `/agents`, `/history`, `/clear`, `/help`, `/quit`. Type `/` or `@` to open the suggestion box.
 
 ### From the shell (CI / scripts)
 
@@ -633,11 +634,11 @@ For shell commands use `"command"` instead of `"agent"`, e.g. `"command": "node 
 Manage them:
 
 ```bash
-pwagent scheduler start          # foreground (reads squad.schedule.json in cwd)
+pwagent scheduler start          # start scheduler (reads squad.schedule.json in cwd)
 pwagent scheduler stop           # signal running scheduler to stop
 pwagent scheduler list           # all jobs + next fire time
-pwagent scheduler status [id]    # detail + recent events
-pwagent scheduler logs <id>      # tail event log
+pwagent scheduler status [id]    # overall status or detail for one job
+pwagent scheduler logs <id>      # tail JSONL event log for a job
 ```
 
 Or use the portal at `/scheduler` and `/jobs`.

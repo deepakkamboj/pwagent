@@ -65,20 +65,23 @@ Standalone CLI for multi-agent Playwright testing. **Squad design, self-containe
 
 It adopts every design pattern from [Brady Gaster's Squad](https://github.com/bradygaster/squad) (charters, routing, reviewer gates, ceremonies, parallel-by-default, Scribe + Ralph) but ships its **own runtime** — no Copilot CLI host process, no `squad.agent.md` token tax per session. The 74 KB upstream coordinator manifest is compiled into the binary. **Workspace overrides** read from `.pwagent/` first (our convention), falling back to `.squad/` (Squad-scaffolded) for full upstream interop.
 
-The v0.3 simplified roster has **10 specialist agents**:
+The current roster has **13 specialist agents**:
 
 | Agent | What it does |
 |---|---|
 | **supervisor** | Top-level router — consults `routing.md` to pick the right specialist |
-| **generate** | Author new Playwright tests for a scenario or coverage gap |
-| **heal** | Patch a failing test or product bug (requires triage stamp first) |
-| **plan** | Build a fix plan from `failures.json` or a scenario-gap report |
-| **scenario** | Coverage analyzer — emit ScenarioGap rows |
-| **report** | Weekly + ad-hoc reports (Markdown + HTML) |
-| **validate** | Run a test twice via `npx playwright test` |
-| **auth** | Auth-flow specialist (storage state, multi-role, login retries) |
+| **discover** | Find failing tests from local runs, ADO, GitHub Actions, or Kusto; optional CI daemon (`--watch`) |
 | **triage** | Classify a failure: ProductBug / TestCodeBug / Environment / Inconclusive |
+| **analyze** | Read-only analyzer — coverage gaps (`--scenarios`), flake ranking (`--flakes`), test quality (`--test-quality`) |
 | **review** | HITL gate — operator stamps `[p]` / `[t]` / `[s]` / `[o]` |
+| **plan** | Build an ordered fix plan from `failures.json` or a scenario-gap report |
+| **fix** | Patcher (atomic `--scope test\|product`) + full orchestrator (`--orchestrate`) |
+| **validate** | Run a test twice via `npx playwright test`; or axe-core before/after delta (`--a11y`) |
+| **publish** | Open PRs via ADO REST or `gh pr create` — never auto-merges |
+| **author** | New-test writer with 7-day probation window |
+| **auth** | Auth-flow specialist (storage state, multi-role, login retries) |
+| **record** | Canonical state writer — traceability matrix (`--kind matrix`) and fix patterns (`--kind patterns`) |
+| **report** | Weekly + ad-hoc reports (Markdown + HTML) |
 
 The monorepo (root [`package.json`](package.json)) ships three independent packages under npm workspaces, plus a docs site:
 
@@ -206,8 +209,8 @@ flowchart TB
     end
 
     subgraph ChatChain ["Chat — pwagent (no args, TTY)"]
-        SquadCLI[@bradygaster/squad-cli<br/>npx]
-        CopilotCLI[GitHub Copilot CLI<br/>banner · slash menus · streaming]
+        SquadCLI[@bradygaster/squad-cli<br/>Ink TUI]
+        CopilotCLI[Squad shell<br/>banner · @ routing · suggestion box · streaming]
     end
 
     Workspace[(Workspace root<br/>.pwagent/  ← canonical<br/>.squad/    ← auto mirror)]
@@ -221,8 +224,7 @@ flowchart TB
     SquadHost -->|"scaffold + mirror"| Workspace
     SquadHost -->|"spawn"| SquadCLI
     SquadCLI -->|"reads .squad/"| Workspace
-    SquadCLI -->|"hands off"| CopilotCLI
-    CopilotCLI -->|"gh auth"| GitHub[(GitHub Copilot service)]
+    SquadCLI -->|"Ink TUI"| CopilotCLI
 
     Cmd --> Coord
     Cmd --> Sched
@@ -247,8 +249,8 @@ flowchart TB
 
 **Two daily-driver flows, one shared content base:**
 
-- **Chat (interactive)** — `pwagent` spawns Squad → Copilot CLI; .pwagent/ → .squad/ mirror feeds Squad; Copilot CLI provides the chat UX.
-- **CI (unattended)** — `pwagent run <agent>` uses our own coordinator + `@github/copilot-sdk` directly; no Copilot CLI dependency on CI runners.
+- **Chat (interactive)** — `pwagent` spawns `@bradygaster/squad-cli`, which renders an Ink TUI (banner, agent roster, `@agent` routing, suggestion box, slash commands). `.pwagent/` → `.squad/` mirror feeds Squad at startup.
+- **CI (unattended)** — `pwagent run <agent>` uses our own coordinator + `@github/copilot-sdk` directly; no Squad dependency on CI runners.
 
 Same 13 agents, same skills, same routing — different invocation surfaces.
 
@@ -498,21 +500,19 @@ npm run dev             # http://127.0.0.1:7337
 
 ## Usage
 
-### Daily driver — `pwagent` opens GitHub Copilot CLI with your agents loaded
+### Daily driver — `pwagent` opens the Squad chat shell
 
 ```bash
-pwagent           # spawns @bradygaster/squad-cli, which launches Copilot CLI
+pwagent           # spawns @bradygaster/squad-cli (Ink TUI)
                   # with pwagent's 13 agents auto-loaded from .squad/
 ```
 
-That's it. The full GitHub Copilot CLI experience — banner, autocomplete, slash commands, status bar, persistent session — with our agents preloaded.
+That's it. The Squad TUI — PWAGENT banner, agent roster (categorised, vertical), `@agent` routing, `/` slash-command menu with suggestion box, streaming responses.
 
-Under the hood, `pwagent` (no args, TTY) does two things and exits:
+Under the hood, `pwagent` (no args, TTY) does two things before handing off:
 
-1. **Lazy-scaffold** `.squad/` in the current directory from the embedded charters (only if it doesn't already exist; never overwrites your customisations).
-2. **Spawn** `npx @bradygaster/squad-cli`, which loads the `.squad/` and hands off to Copilot CLI.
-
-We don't build a custom chat REPL because Copilot CLI already is one — and Squad makes our agents discoverable inside it.
+1. **Lazy-scaffold** `.pwagent/` from embedded charters (only if missing; never overwrites your customisations), then mirror to `.squad/`.
+2. **Spawn** `@bradygaster/squad-cli` with `SQUAD_BRAND_*` env vars so the TUI shows the PWAGENT identity.
 
 ### Bootstrap (one time)
 
@@ -574,18 +574,15 @@ For day-to-day human use, **just type `pwagent`** and use slash commands.
 ### Other entry points
 
 ```bash
-pwagent review                       # interactive HITL stamp loop (also /review in chat)
-pwagent ralph go | status | stop     # in-session driver (Squad-style; legacy)
+pwagent review                       # interactive HITL stamp loop
+pwagent ralph go | status | stop     # in-session driver (Squad-style)
 
-# scheduler — in-process, hot-reload, JSONL events
-pwagent scheduler start [--daemon]
-pwagent scheduler stop
-pwagent scheduler list
-pwagent scheduler status [<id>] [-n <limit>]
-pwagent scheduler dry-run <id> [--execute]
-pwagent job add <path>
-pwagent job enable <id> | disable <id>
-pwagent job logs <id> [-n <limit>]
+# scheduler — powered by @bradygaster/squad-scheduler; config in squad.schedule.json
+pwagent scheduler start              # start the scheduler (reads squad.schedule.json)
+pwagent scheduler stop               # signal a running scheduler to stop
+pwagent scheduler list               # list jobs + next fire time
+pwagent scheduler status [<id>]      # overall status or detail for one job
+pwagent scheduler logs <id>          # tail JSONL event log for a job
 
 # portal — local Next.js dashboard
 pwagent portal start [--dev] [--port <n>] [--read-only] [--bind-all]
@@ -687,44 +684,41 @@ pwagent run record --kind patterns --from ./fix-results.json
 
 Full examples and end-to-end workflows live in [USAGE.md](USAGE.md).
 
-### Interactive chat — `pwagent` opens Copilot CLI via Squad
+### Interactive chat — `pwagent` opens the Squad shell
 
-`pwagent` (no args, TTY) spawns `@bradygaster/squad-cli`, which launches **GitHub Copilot CLI** with our 13 agents loaded. You get Copilot CLI's full native experience — banner, slash-command autocomplete, persistent session, syntax-highlighted output, multi-line input. We don't reinvent the chat surface.
+`pwagent` (no args, TTY) spawns `@bradygaster/squad-cli`, which renders an **Ink TUI** — PWAGENT banner, categorised agent roster, `@agent` routing with suggestion box, `/` slash-command autocomplete, and streaming responses. We don't build a custom REPL: squad-cli is already one, and Squad wires our 13 agents into it.
 
 ```bash
-pwagent                # opens Copilot CLI (via squad)
+pwagent                # opens Squad TUI
 ```
 
-**On first run in a workspace:** pwagent lazy-scaffolds a `.squad/` directory from its embedded charters:
+**On first run in a workspace:** pwagent lazy-scaffolds `.pwagent/` from its embedded charters, then mirrors it to `.squad/` (Squad reads that path):
 
 ```
-.squad/
-├── agents/                  ← 13 charters (analyze, auth, author, discover, fix, ...)
-├── skills/                  ← 60+ skill guides
+.pwagent/                        ← canonical — edit here
+├── agents/                      ← 13 charters (analyze, auth, author, discover, fix, ...)
+├── skills/                      ← 60+ skill guides
 ├── routing.md
 ├── team.md
 ├── ceremonies.md
 └── master-prompt.md
+
+.squad/                          ← auto-generated mirror — add to .gitignore
 ```
 
-Subsequent runs reuse the existing `.squad/`. Customise any file you want — pwagent never overwrites your local changes.
+Subsequent runs rebuild `.squad/` fresh from `.pwagent/` — your changes in `.pwagent/` always propagate.
 
-**Inside the Copilot CLI session**, Squad's coordinator handles routing. Type free text or any of Copilot CLI's slash commands (`/help`, `/clear`, `/quit`, `/update`, etc.). To invoke a specific specialist:
+**Inside the chat shell**, type free text (the supervisor routes it) or address a specialist directly:
 
 ```
-› /fix --orchestrate --ado-pipeline 23878
-› /triage --run-id 89211
-› /analyze --flakes --pipeline 23878 --top 10
+› fix everything red in pipeline 23878
+› @pwagent-fix --orchestrate --ado-pipeline 23878
+› @pwagent-triage --run-id 89211
 ```
 
-(Squad maps these to your `.squad/agents/<name>/charter.md` automatically.)
+Slash commands (`/status`, `/agents`, `/history`, `/clear`, `/help`, `/quit`) are built-in. Type `/` or `@` to open the suggestion box.
 
-**Why delegate the chat to Copilot CLI?** Two reasons:
-
-1. **Copilot CLI is mature** — autocomplete, history, multi-line input, syntax highlighting, persistent session, mobile mirroring. Things we'd never build well alone.
-2. **Squad provides the bridge** — Squad's coordinator manifest discovers our `.squad/` charters and wires routing inside the Copilot session. The Squad CLI is already a `pwagent` dependency.
-
-**For CI / scripted invocations** that can't open Copilot CLI, the **`pwagent run`** command stays — same coordinator, same SDK, headless:
+**For CI / scripted invocations**, the **`pwagent run`** command stays — same coordinator, same SDK, headless:
 
 ```bash
 pwagent run fix --orchestrate --ado-pipeline 23878 --auto-stamp --json
@@ -965,7 +959,7 @@ pwagent/                          ← root: npm workspaces wrapper, private
 │   │   ├── runtime/              ← provider (Copilot SDK), coordinator, tools, routingTable
 │   │   ├── audit/                ← JSONL writer + reader
 │   │   ├── content/              ← embedded into the binary
-│   │   │   ├── agents/           ← 10 charters: supervisor, generate, heal, plan, scenario, report, validate, auth, triage, review
+│   │   │   ├── agents/           ← 13 charters: supervisor, discover, triage, analyze, review, plan, fix, validate, publish, author, auth, record, report
 │   │   │   ├── skills/
 │   │   │   │   ├── core/         ← Playwright core guides (locators, assertions, fixtures, …)
 │   │   │   │   ├── ci/           ← CI/CD guides
@@ -1015,7 +1009,7 @@ This makes pwagent fully compatible with workspaces scaffolded by `npx @bradygas
 
 ## Sequence diagrams
 
-### Chat launch — `pwagent` opens GitHub Copilot CLI
+### Chat launch — `pwagent` opens the Squad shell
 
 ```mermaid
 sequenceDiagram
@@ -1023,8 +1017,7 @@ sequenceDiagram
     participant Term as Terminal
     participant Bin as pwagent binary
     participant FS as filesystem
-    participant Squad as @bradygaster/squad-cli (npx)
-    participant Copilot as GitHub Copilot CLI
+    participant Squad as @bradygaster/squad-cli (Ink TUI)
 
     User->>Term: pwagent
     Term->>Bin: argv=["pwagent"]; stdin.isTTY=true
@@ -1038,17 +1031,15 @@ sequenceDiagram
 
     Bin->>FS: rm -rf .squad/
     Bin->>FS: cp .pwagent/ → .squad/  (mirror)
-    Bin-->>Term: "launching Copilot CLI via Squad…"
+    Bin-->>Term: "launching Squad shell…"
 
-    Bin->>Squad: spawn npx @bradygaster/squad-cli (stdio inherit)
-    Squad->>FS: read .squad/agents/, skills/, routing.md, team.md
-    Squad->>Copilot: launch with squad.agent.md coordinator + roster
-    Copilot-->>User: banner, slash-menu, › prompt
+    Bin->>Squad: spawn node dist/cli-entry.js (SQUAD_BRAND_* env, stdio inherit)
+    Squad->>FS: read .squad/agents/, skills/, team.md
+    Squad-->>User: PWAGENT banner · agent roster · ◆ pwagent> prompt
 
-    Note over User,Copilot: User chats interactively.<br/>/fix --orchestrate routes via Squad's coordinator.
+    Note over User,Squad: User types free text or @agent · / for slash commands.
 
-    User->>Copilot: /quit
-    Copilot-->>Squad: exit 0
+    User->>Squad: /quit
     Squad-->>Bin: exit 0
     Bin->>Term: process.exit(0)
 ```
