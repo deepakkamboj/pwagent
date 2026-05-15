@@ -13,17 +13,14 @@ Write-Host "  pwagent -- Updater" -ForegroundColor Magenta
 Write-Host "  ==================" -ForegroundColor Magenta
 Write-Host ""
 
+try {
+
 $installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
 
-# ── Guard: must be installed ──────────────────────────────────────────────────
 if (-not (Test-Path (Join-Path $installDir ".git"))) {
-    Write-Err "pwagent is not installed at $installDir"
-    Write-Host "  Run the installer first:" -ForegroundColor Gray
-    Write-Host '  iex "& { $(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }"' -ForegroundColor Gray
-    exit 1
+    throw "pwagent is not installed at $installDir. Run the installer first:`n  iex `"& { `$(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }`""
 }
 
-# Show current version
 Push-Location $installDir
 $pkg = Get-Content "cli\package.json" | ConvertFrom-Json
 Write-Host "  Current version: $($pkg.version)" -ForegroundColor Gray
@@ -36,7 +33,7 @@ $ErrorActionPreference = "Continue"
 git fetch origin
 $fetchExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($fetchExit -ne 0) { Write-Err "git fetch failed."; Pop-Location; exit 1 }
+if ($fetchExit -ne 0) { throw "git fetch failed." }
 
 $local  = (git rev-parse HEAD 2>$null).Trim()
 $remote = (git rev-parse "@{u}" 2>$null).Trim()
@@ -48,7 +45,7 @@ if ($local -eq $remote) {
     git pull --ff-only
     $pullExit = $LASTEXITCODE
     $ErrorActionPreference = "Stop"
-    if ($pullExit -ne 0) { Write-Err "git pull failed. Resolve conflicts manually."; Pop-Location; exit 1 }
+    if ($pullExit -ne 0) { throw "git pull failed. Resolve conflicts manually." }
     $newPkg = Get-Content "cli\package.json" | ConvertFrom-Json
     Write-Ok "Updated to v$($newPkg.version)"
 }
@@ -61,7 +58,7 @@ $ErrorActionPreference = "Continue"
 npm install
 $npmExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($npmExit -ne 0) { Write-Err "npm install failed."; Pop-Location; exit 1 }
+if ($npmExit -ne 0) { throw "npm install failed." }
 Write-Ok "Dependencies installed"
 
 # ── Step 3: Rebuild and re-link ───────────────────────────────────────────────
@@ -72,7 +69,7 @@ $ErrorActionPreference = "Continue"
 npm run build --workspace cli
 $buildExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($buildExit -ne 0) { Write-Err "Build failed."; Pop-Location; exit 1 }
+if ($buildExit -ne 0) { throw "Build failed." }
 Write-Ok "Build complete"
 
 Write-Host "  Re-linking 'pwagent' command..." -ForegroundColor Gray
@@ -80,16 +77,23 @@ $ErrorActionPreference = "Continue"
 npm link --workspace cli
 $linkExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($linkExit -ne 0) { Write-Err "npm link failed. Try running as Administrator."; Pop-Location; exit 1 }
+if ($linkExit -ne 0) { throw "npm link failed. Try running as Administrator." }
 Write-Ok "'pwagent' command linked"
 
 Pop-Location
 
-# ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  +------------------------------------------+" -ForegroundColor Green
 Write-Host "  |  pwagent updated successfully!           |" -ForegroundColor Green
 Write-Host "  +------------------------------------------+" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Run 'pwagent' to start." -ForegroundColor Gray
+
+} catch {
+    Write-Host ""
+    Write-Err $_.Exception.Message
+}
+
 Write-Host ""
+Write-Host "  Press Enter to close..." -ForegroundColor Gray
+$null = Read-Host

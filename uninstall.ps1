@@ -12,10 +12,12 @@ Write-Host "  pwagent -- Uninstaller" -ForegroundColor Magenta
 Write-Host "  ======================" -ForegroundColor Magenta
 Write-Host ""
 
+try {
+
 $installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
 $globalDir  = Join-Path $env:USERPROFILE ".pwagent"
 
-# -- Unlink global 'pwagent' command ------------------------------------------
+# ── Unlink global 'pwagent' command ───────────────────────────────────────────
 if (Test-Path (Join-Path $installDir "package.json")) {
     Write-Host "  Removing global 'pwagent' command..." -ForegroundColor Gray
     $ErrorActionPreference = "Continue"
@@ -28,13 +30,12 @@ if (Test-Path (Join-Path $installDir "package.json")) {
     Write-Warn "pwagent repo not found at $installDir -- skipping unlink"
 }
 
-# -- Remove cloned repo -------------------------------------------------------
+# ── Remove cloned repo ────────────────────────────────────────────────────────
 if (Test-Path $installDir) {
     Write-Host "  Removing repo at $installDir..." -ForegroundColor Gray
     Remove-Item -Recurse -Force $installDir
     Write-Ok "Repo removed"
 
-    # Remove parent repos dir if now empty
     $reposDir = Split-Path $installDir
     if ((Get-ChildItem $reposDir -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
         Remove-Item -Force $reposDir
@@ -43,7 +44,7 @@ if (Test-Path $installDir) {
     Write-Warn "Repo not found at $installDir -- skipping"
 }
 
-# -- Offer to remove config / data in ~/.pwagent/ -----------------------------
+# ── Offer to remove config / data ─────────────────────────────────────────────
 Write-Host ""
 Write-Host "  Config and data are stored at: $globalDir" -ForegroundColor Gray
 Write-Host "  (squad.brand.json, scheduler state, logs, etc.)" -ForegroundColor Gray
@@ -60,4 +61,12 @@ if ($answer -match "^[Yy]") {
 
 Write-Host ""
 Write-Host "  pwagent uninstalled." -ForegroundColor Green
+
+} catch {
+    Write-Host ""
+    Write-Err $_.Exception.Message
+}
+
 Write-Host ""
+Write-Host "  Press Enter to close..." -ForegroundColor Gray
+$null = Read-Host

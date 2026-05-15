@@ -78,12 +78,14 @@ Write-Host "  ====================" -ForegroundColor Magenta
 Write-Host "  Channel: $Channel (branch: $branch)" -ForegroundColor Magenta
 Write-Host ""
 
+try {
+
 # ── Step 1: Prerequisites ─────────────────────────────────────────────────────
 Write-Step 1 4 "Prerequisites"
 
 # Node.js (required)
 $nodeResult = Install-Prereq "node" "OpenJS.NodeJS.LTS" $true
-if ($nodeResult -eq "failed") { exit 1 }
+if ($nodeResult -eq "failed") { throw "Node.js is required." }
 if ($nodeResult -eq "restart") { $script:needsRestart = $true }
 
 # Verify Node.js >= 22; upgrade if too old
@@ -113,12 +115,12 @@ if ($nodeResult -eq "ok") {
 
 # git (required)
 $gitResult = Install-Prereq "git" "Git.Git" $true
-if ($gitResult -eq "failed") { exit 1 }
+if ($gitResult -eq "failed") { throw "git is required." }
 if ($gitResult -eq "restart") { $script:needsRestart = $true }
 
 # GitHub CLI (required for Copilot authentication)
 $ghResult = Install-Prereq "gh" "GitHub.cli" $true
-if ($ghResult -eq "failed") { exit 1 }
+if ($ghResult -eq "failed") { throw "GitHub CLI is required." }
 if ($ghResult -eq "restart") { $script:needsRestart = $true }
 
 # ── Restart gate ──────────────────────────────────────────────────────────────
@@ -136,8 +138,7 @@ if ($script:needsRestart) {
     Write-Host '  |    /deepakkamboj/pwagent/main/install.ps1) }"' -ForegroundColor Gray
     Write-Host "  |                                                        |" -ForegroundColor Yellow
     Write-Host "  +------------------------------------------------------+" -ForegroundColor Yellow
-    Write-Host ""
-    exit 0
+    return
 }
 
 # ── Step 2: GitHub Authentication ─────────────────────────────────────────────
@@ -152,10 +153,7 @@ if ($authOk) {
     Write-Host "  GitHub CLI needs authentication -- a browser window will open." -ForegroundColor Yellow
     Write-Host ""
     gh auth login
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "Authentication failed. Run 'gh auth login' manually then re-run this script."
-        exit 1
-    }
+    if ($LASTEXITCODE -ne 0) { throw "Authentication failed. Run 'gh auth login' manually then re-run." }
     Write-Ok "GitHub CLI authenticated"
 }
 
@@ -200,7 +198,7 @@ $ErrorActionPreference = "Continue"
 npm install
 $npmExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($npmExit -ne 0) { Write-Err "npm install failed. Check the output above."; exit 1 }
+if ($npmExit -ne 0) { throw "npm install failed." }
 Write-Ok "Dependencies installed"
 
 Write-Host "  Building..." -ForegroundColor Gray
@@ -208,7 +206,7 @@ $ErrorActionPreference = "Continue"
 npm run build --workspace cli
 $buildExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($buildExit -ne 0) { Write-Err "Build failed. Check the output above."; exit 1 }
+if ($buildExit -ne 0) { throw "Build failed." }
 Write-Ok "Build complete"
 
 Write-Host "  Linking 'pwagent' command globally..." -ForegroundColor Gray
@@ -216,7 +214,7 @@ $ErrorActionPreference = "Continue"
 npm link --workspace cli
 $linkExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-if ($linkExit -ne 0) { Write-Err "npm link failed. Try running as Administrator."; exit 1 }
+if ($linkExit -ne 0) { throw "npm link failed. Try running as Administrator." }
 Write-Ok "'pwagent' command linked globally"
 
 Pop-Location
@@ -234,4 +232,12 @@ Write-Host "    pwagent prereqs --install   # install gh, az, axe-core, etc." -F
 Write-Host "    pwagent login               # authenticate with GitHub Copilot" -ForegroundColor Gray
 Write-Host "    pwagent doctor              # verify everything is ready" -ForegroundColor Gray
 Write-Host "    pwagent                     # open the chat shell" -ForegroundColor Gray
+
+} catch {
+    Write-Host ""
+    Write-Err $_.Exception.Message
+}
+
 Write-Host ""
+Write-Host "  Press Enter to close..." -ForegroundColor Gray
+$null = Read-Host
