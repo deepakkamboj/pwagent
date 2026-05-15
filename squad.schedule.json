@@ -1,0 +1,36 @@
+{
+  "jobs": [
+    {
+      "id": "daily-triage",
+      "name": "Daily Triage",
+      "description": "Run the triage agent against the default ADO pipeline each weekday morning",
+      "cron": "0 9 * * 1-5",
+      "agent": "triage",
+      "args": "--ado-pipeline 23878",
+      "enabled": false,
+      "maxRunSeconds": 900,
+      "retryOnFailure": true,
+      "maxRetries": 2,
+      "retryBackoffSeconds": 60
+    },
+    {
+      "id": "hourly-flake-check",
+      "name": "Hourly Flake Check",
+      "description": "Scan for newly flaky tests every hour during business hours",
+      "cron": "0 8-18 * * 1-5",
+      "agent": "analyze",
+      "args": "--flakes",
+      "enabled": false,
+      "maxRunSeconds": 600
+    },
+    {
+      "id": "weekly-report",
+      "name": "Weekly Test Quality Report",
+      "description": "Generate a test quality report every Monday morning",
+      "cron": "0 8 * * 1",
+      "agent": "report",
+      "enabled": false,
+      "maxRunSeconds": 1200
+    }
+  ]
+}

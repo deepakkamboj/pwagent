@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@bradygaster/squad-cli": "file:../../squad/packages/squad-cli",
+    "@bradygaster/squad-scheduler": "file:../../squad/packages/squad-scheduler",
     "@github/copilot-sdk": "^0.3.0",
     "commander": "^12.1.0",
     "execa": "^9.5.1",
