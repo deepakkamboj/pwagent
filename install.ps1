@@ -96,20 +96,31 @@ if ($nodeResult -eq "ok") {
         Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
 
         # If nvm is available use it — avoids npm config conflicts from mixed installs
+        $nvmOk = $false
         if (Get-Command nvm -ErrorAction SilentlyContinue) {
             Write-Host "  nvm detected — installing Node.js 22 via nvm..." -ForegroundColor Gray
-            nvm install 22
-            nvm use 22
+            # Try latest Node 22, fall back to a known ARM64-safe version
+            $nvmOut = (nvm install 22 2>&1)
+            if ($nvmOut -match "not available") {
+                Write-Warn "  Latest Node 22 not available for this architecture, trying 22.11.0..."
+                nvm install 22.11.0 2>$null
+                nvm use 22.11.0 2>$null
+            } else {
+                nvm use 22 2>$null
+            }
             Refresh-Path
             $newVer   = (node --version 2>$null) -replace '^v', ''
             $newMajor = [int]($newVer.Split('.')[0])
             if ($newMajor -ge 22) {
                 Write-Ok "Node.js switched to v$newVer via nvm"
+                $nvmOk = $true
             } else {
                 Write-Warn "nvm install succeeded but needs a new terminal to take effect"
                 $script:needsRestart = $true
+                $nvmOk = $true
             }
-        } else {
+        }
+        if (-not $nvmOk) {
             # Direct MSI install from nodejs.org
             Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
             try {
