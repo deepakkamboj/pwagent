@@ -7,32 +7,74 @@ Write-Host ""
 Write-Host "  Installing pwagent..." -ForegroundColor Magenta
 Write-Host ""
 
-# Node 22+ required
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Host "  [ERROR] Node.js 22+ is required." -ForegroundColor Red
-    Write-Host "          Install: winget install OpenJS.NodeJS.LTS" -ForegroundColor Gray
-    exit 1
+# ── helpers ───────────────────────────────────────────────────────────────────
+function Refresh-Path {
+    $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                [System.Environment]::GetEnvironmentVariable('Path', 'User')
 }
-$nodeVersion = (node --version) -replace 'v', ''
-$nodeMajor   = [int]($nodeVersion.Split('.')[0])
+
+function Get-NodeMajor {
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) { return 0 }
+    $ver = (node --version 2>$null) -replace 'v', ''
+    return [int]($ver.Split('.')[0])
+}
+
+# ── Node 22+ ──────────────────────────────────────────────────────────────────
+$nodeMajor = Get-NodeMajor
 if ($nodeMajor -lt 22) {
-    Write-Host "  [ERROR] Node.js 22+ required (found $nodeVersion)." -ForegroundColor Red
-    Write-Host "          Install: winget install OpenJS.NodeJS.LTS" -ForegroundColor Gray
-    exit 1
+    if ($nodeMajor -eq 0) {
+        Write-Host "  Node.js not found — installing..." -ForegroundColor Cyan
+    } else {
+        Write-Host "  Node.js $nodeMajor found — upgrading to LTS 22+..." -ForegroundColor Cyan
+    }
+
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host "  [ERROR] winget not found. Install Node.js 22+ manually: https://nodejs.org" -ForegroundColor Red
+        exit 1
+    }
+
+    winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements --silent
+    Refresh-Path
+
+    $nodeMajor = Get-NodeMajor
+    if ($nodeMajor -lt 22) {
+        Write-Host ""
+        Write-Host "  Node.js installed but not yet in PATH." -ForegroundColor Yellow
+        Write-Host "  Please open a new terminal and re-run the installer:" -ForegroundColor Yellow
+        Write-Host "    iex `"& { `$(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }`"" -ForegroundColor Gray
+        exit 0
+    }
+
+    Write-Host "  Node.js $(node --version) ready." -ForegroundColor Green
 }
 
-# git required
+# ── git ───────────────────────────────────────────────────────────────────────
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "  [ERROR] git is required." -ForegroundColor Red
-    Write-Host "          Install: winget install Git.Git" -ForegroundColor Gray
-    exit 1
+    Write-Host "  git not found — installing..." -ForegroundColor Cyan
+
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host "  [ERROR] winget not found. Install git manually: https://git-scm.com" -ForegroundColor Red
+        exit 1
+    }
+
+    winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements --silent
+    Refresh-Path
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host ""
+        Write-Host "  git installed but not yet in PATH." -ForegroundColor Yellow
+        Write-Host "  Please open a new terminal and re-run the installer." -ForegroundColor Yellow
+        exit 0
+    }
+
+    Write-Host "  git $(git --version) ready." -ForegroundColor Green
 }
 
+# ── clone / update pwagent ────────────────────────────────────────────────────
 $installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
-
 New-Item -ItemType Directory -Force -Path (Split-Path $installDir) | Out-Null
 
-# ── clone / update pwagent ───────────────────────────────────────────────────
 Write-Host "  Setting up pwagent..." -ForegroundColor Cyan
 if (Test-Path (Join-Path $installDir ".git")) {
     Push-Location $installDir
@@ -42,7 +84,7 @@ if (Test-Path (Join-Path $installDir ".git")) {
     git clone https://github.com/deepakkamboj/pwagent.git $installDir
 }
 
-# ── install deps (pulls squad packages from GitHub fork automatically) ───────
+# ── install deps (pulls squad packages from GitHub fork automatically) ────────
 Write-Host "  Installing dependencies..." -ForegroundColor Cyan
 Push-Location $installDir
 npm install --silent
