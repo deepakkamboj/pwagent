@@ -1,9 +1,5 @@
 # pwagent installer
 # Usage: iex "& { $(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }"
-#
-# Clones both repos as siblings so file: workspace links resolve correctly:
-#   ~/.pwagent/repos/pwagent/   <- this repo
-#   ~/.pwagent/repos/squad/     <- deepakkamboj/squad fork (squad-cli + squad-scheduler)
 
 $ErrorActionPreference = 'Stop'
 
@@ -32,53 +28,48 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$reposRoot  = Join-Path $env:USERPROFILE ".pwagent\repos"
-$pwagentDir = Join-Path $reposRoot "pwagent"
-$squadDir   = Join-Path $reposRoot "squad"
+$installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
 
-New-Item -ItemType Directory -Force -Path $reposRoot | Out-Null
-
-# ── clone / update squad fork (provides squad-cli + squad-scheduler) ────────
-Write-Host "  Setting up squad fork..." -ForegroundColor Cyan
-if (Test-Path (Join-Path $squadDir ".git")) {
-    Push-Location $squadDir
-    git pull --ff-only
-    Pop-Location
-} else {
-    git clone --branch dev https://github.com/deepakkamboj/squad.git $squadDir
-}
-
-Write-Host "  Building squad packages..." -ForegroundColor Cyan
-Push-Location $squadDir
-npm install --silent
-npm run build --workspace packages/squad-cli --silent
-npm run build --workspace packages/squad-scheduler --silent
-Pop-Location
+New-Item -ItemType Directory -Force -Path (Split-Path $installDir) | Out-Null
 
 # ── clone / update pwagent ───────────────────────────────────────────────────
 Write-Host "  Setting up pwagent..." -ForegroundColor Cyan
-if (Test-Path (Join-Path $pwagentDir ".git")) {
-    Push-Location $pwagentDir
+if (Test-Path (Join-Path $installDir ".git")) {
+    Push-Location $installDir
     git pull --ff-only
     Pop-Location
 } else {
-    git clone https://github.com/deepakkamboj/pwagent.git $pwagentDir
+    git clone https://github.com/deepakkamboj/pwagent.git $installDir
 }
 
-Write-Host "  Installing dependencies and building..." -ForegroundColor Cyan
-Push-Location $pwagentDir
-# Both repos are siblings under ~/.pwagent/repos/ so file:../../squad/... resolves correctly
+# ── install deps (pulls squad packages from GitHub fork automatically) ───────
+Write-Host "  Installing dependencies..." -ForegroundColor Cyan
+Push-Location $installDir
 npm install --silent
-npm run build --silent
+
+# ── copy config files to ~/.pwagent/ (skip if already present) ───────────────
+$globalDir = Join-Path $env:USERPROFILE ".pwagent"
+New-Item -ItemType Directory -Force -Path $globalDir | Out-Null
+
+foreach ($file in @("squad.brand.json", "squad.schedule.json", "pwagent.config.example.json")) {
+    $src  = Join-Path $installDir $file
+    $dest = Join-Path $globalDir $file
+    if ((Test-Path $src) -and -not (Test-Path $dest)) {
+        Copy-Item $src $dest
+        Write-Host "  Copied $file to $globalDir" -ForegroundColor Gray
+    }
+}
+
+# ── build and link ────────────────────────────────────────────────────────────
+Write-Host "  Building..." -ForegroundColor Cyan
+npm run build --workspace cli --silent
 npm link --workspace cli
 Pop-Location
 
 Write-Host ""
 Write-Host "  pwagent installed!" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Repos:"
-Write-Host "    pwagent  $pwagentDir" -ForegroundColor Gray
-Write-Host "    squad    $squadDir" -ForegroundColor Gray
+Write-Host "  Installed to: $installDir" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Get started:" -ForegroundColor White
 Write-Host "    pwagent prereqs --install   # install gh, az, axe-core, etc." -ForegroundColor Gray
