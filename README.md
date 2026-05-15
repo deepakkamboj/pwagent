@@ -61,7 +61,21 @@ Standalone CLI for multi-agent Playwright testing. **Squad design, self-containe
 
 ## Setup
 
-### 1. Install via npm workspaces (single command for CLI + portal)
+### One-line install (Windows PowerShell)
+
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }"
+```
+
+This clones the repo to `~/.pwagent/src`, builds, and links `pwagent` globally. Requires **Node.js 22+** and **git** — install them first if missing:
+
+```powershell
+winget install OpenJS.NodeJS.LTS Git.Git
+```
+
+---
+
+### Manual install (dev / portal)
 
 ```powershell
 cd D:\gith\pwagent
