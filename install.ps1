@@ -83,45 +83,60 @@ try {
 # ── Step 1: Prerequisites ─────────────────────────────────────────────────────
 Write-Step 1 4 "Prerequisites"
 
-# Node.js (required)
-$nodeResult = Install-Prereq "node" "OpenJS.NodeJS.LTS" $true
-if ($nodeResult -eq "failed") { throw "Node.js is required." }
-if ($nodeResult -eq "restart") { $script:needsRestart = $true }
+# Node.js 22+ (required) -- always install via MSI from nodejs.org to get the right version
+function Install-Node22 {
+    Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
+    try {
+        $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+        $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
+        if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
 
-# Verify Node.js >= 22; upgrade if too old
-if ($nodeResult -eq "ok") {
+        $arch    = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+        $msiUrl  = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
+        $msiPath = Join-Path $env:TEMP "nodejs22.msi"
+
+        Write-Host "  Downloading Node.js $($node22.version) ($arch)..." -ForegroundColor Gray
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+
+        Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
+        Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart ADDLOCAL=ALL" -Verb RunAs -Wait
+        Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+        Refresh-Path
+
+        if (Test-Command "node") {
+            $ver = (node --version 2>$null) -replace '^v', ''
+            Write-Ok "Node.js $($node22.version) installed -- v$ver"
+            return "ok"
+        } else {
+            Write-Warn "Node.js installed but not yet on PATH -- restart required"
+            return "restart"
+        }
+    } catch {
+        Write-Warn "Auto-install failed: $($_.Exception.Message)"
+        Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
+        return "failed"
+    }
+}
+
+$nodePresent = Test-Command "node"
+if ($nodePresent) {
     $nodeVer = (node --version 2>$null) -replace '^v', ''
     $major   = [int]($nodeVer.Split('.')[0])
-    if ($major -lt 22) {
+    if ($major -ge 22) {
+        Write-Ok "node -- v$nodeVer"
+    } else {
         Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
-
-        {
-            # Direct MSI install from nodejs.org
-            Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
-            try {
-                $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
-                $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
-                if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
-
-                $arch    = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
-                $msiUrl  = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
-                $msiPath = Join-Path $env:TEMP "nodejs22.msi"
-
-                Write-Host "  Downloading Node.js $($node22.version)..." -ForegroundColor Gray
-                Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
-
-                Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
-                Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart" -Verb RunAs -Wait
-                Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
-
-                Write-Ok "Node.js $($node22.version) installed"
-            } catch {
-                Write-Warn "Auto-install failed: $($_.Exception.Message)"
-                Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
-            }
-            $script:needsRestart = $true
-        }
+        $nodeInstallResult = Install-Node22
+        if ($nodeInstallResult -eq "restart") { $script:needsRestart = $true }
+        if ($nodeInstallResult -eq "failed")  { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
     }
+} else {
+    Write-Warn "node not found (Required)"
+    $answer = Read-Host "  Install Node.js 22 LTS? [Y/n]"
+    if ($answer -and $answer -notmatch "^[Yy]") { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
+    $nodeInstallResult = Install-Node22
+    if ($nodeInstallResult -eq "restart") { $script:needsRestart = $true }
+    if ($nodeInstallResult -eq "failed")  { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
 }
 
 # git (required)
