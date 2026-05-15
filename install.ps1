@@ -94,10 +94,28 @@ if ($nodeResult -eq "ok") {
     $major   = [int]($nodeVer.Split('.')[0])
     if ($major -lt 22) {
         Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
-        Write-Host "  Launching Node.js upgrade in a new window (please wait for it to finish)..." -ForegroundColor Gray
-        # Run in a separate elevated process — the Node.js MSI installer can kill
-        # the current session if run inline. This keeps THIS terminal alive.
-        Start-Process cmd -ArgumentList "/c winget upgrade --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements && echo. && echo Node.js upgraded successfully. You can close this window. && pause" -Verb RunAs -Wait
+        Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
+        try {
+            $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+            $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
+            if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
+
+            $arch   = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+            $msiUrl = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
+            $msiPath = Join-Path $env:TEMP "nodejs22.msi"
+
+            Write-Host "  Downloading Node.js $($node22.version)..." -ForegroundColor Gray
+            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+
+            Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
+            Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart" -Verb RunAs -Wait
+            Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+
+            Write-Ok "Node.js $($node22.version) installed"
+        } catch {
+            Write-Warn "Auto-install failed: $($_.Exception.Message)"
+            Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
+        }
         $script:needsRestart = $true
     }
 }
