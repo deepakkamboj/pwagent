@@ -23,7 +23,7 @@ This is the **practical** guide. For architecture and reference material, see [d
 - **`pwagent` opens the Squad chat shell** — an Ink TUI with PWAGENT banner, categorised agent roster, `@agent` routing, `/` slash-command suggestion box, and streaming responses. Squad (`@bradygaster/squad-cli`) provides the UI; we pass our 13 agents via `.squad/`.
 - On first run in a workspace, pwagent scaffolds a **`.pwagent/`** directory (canonical content) from its embedded charters, then mirrors it to **`.squad/`** (Squad CLI reads that path). User edits go in `.pwagent/`; `.squad/` is regenerated on every launch.
 - For **CI / scheduled runs**, the headless form `pwagent run <agent>` is still available. It uses pwagent's own coordinator + SDK — no Squad dependency on CI runners.
-- Each agent is a Markdown **charter** with stable sections (Identity, Responsibilities, Boundaries, Tools, Model). Read one with `pwagent agents show <name>` from a shell, or browse inside Copilot CLI once chat is open.
+- Each agent is a Markdown **charter** with stable sections (Identity, Responsibilities, Boundaries, Tools, Model). Read one with `pwagent agents show <name>` from a shell, or use `/agents` inside the chat shell.
 - Multi-purpose agents specialize via flags: `fix --scope test|product`, `validate --test|--a11y`, `discover --watch`, `analyze --scenarios|--flakes|--test-quality`, `record --kind matrix|patterns`.
 - Skills are **side knowledge** the coordinator injects automatically based on what you typed. You usually don't pick them; you can override with `--skills`.
 - Some agents are **gated**: `fix --scope product` won't write to `src/` without a `[p]` stamp; `fix --orchestrate` walks through `review` automatically unless `--auto-stamp` is set.
@@ -95,135 +95,162 @@ pwagent run analyze --cwd D:/code/my-tests --scenarios --path src/checkout
 
 ## The 13 agents — what to type at each one
 
+Each section shows two invocation styles:
+- **`›`** — typed inside the Squad chat shell (`pwagent` with no args)
+- **`$`** — run from a terminal / CI script
+
+---
+
 ### supervisor — the top-level router
 
-The supervisor consults [`cli/src/content/routing.md`](cli/src/content/routing.md) and delegates. Use it when you don't want to pick an agent yourself.
+The supervisor consults [`cli/src/content/routing.md`](cli/src/content/routing.md) and delegates. Use it when you don't want to pick an agent yourself. In chat, just type free text — the supervisor is the default handler.
+
+```
+› the cart drag-and-drop test failed on run 89211, fix it
+  → routes to triage → (HITL stamp) → fix
+
+› what changed in our flake rate this week
+  → routes to report
+
+› audit all our test fixtures for missing storage state
+  → routes to auth
+```
 
 ```bash
-pwagent run "the cart drag-and-drop test failed on run 89211, fix it"
-# → supervisor routes to triage → (HITL stamp) → fix
-
-pwagent run "what changed in our flake rate this week"
-# → supervisor routes to report
-
-pwagent run "audit all our test fixtures for missing storage state"
-# → supervisor routes to auth
+$ pwagent run "the cart drag-and-drop test failed on run 89211, fix it"
+$ pwagent run "what changed in our flake rate this week"
 ```
+
+---
 
 ### discover — find failing tests + (optional) CI daemon
 
-One-shot collection from local runs, ADO Pipelines, GitHub Actions, or Kusto. Add `--watch` and it becomes a long-poll daemon that dispatches `triage` on every new failure.
+One-shot collection from local runs, ADO Pipelines, GitHub Actions, or Kusto. Add `--watch` for a long-poll daemon that dispatches `triage` on every new failure.
+
+```
+› @pwagent-discover --source ado --pipeline 23878
+› @pwagent-discover --source kusto --pipeline 23878 --window 7d
+› @pwagent-discover --watch
+› @pwagent-discover scan GitHub Actions run 12345 in microsoft/playwright-tests for failures
+```
 
 ```bash
-# One-shot — local
-pwagent run discover --source local
-
-# One-shot — ADO build
-pwagent run discover --source ado --pipeline 23878 --build 4587201
-
-# One-shot — GitHub Actions run
-pwagent run discover --source github --run-id 12345 --repo microsoft/playwright-tests
-
-# One-shot — Kusto window
-pwagent run discover --source kusto --pipeline 23878 --window 7d
-
-# Daemon mode — polls every 5 min, dispatches triage per new failed run
-pwagent run discover --watch
-pwagent run discover --watch --poll-seconds 120 --max-dispatch 10
-pwagent run discover --watch --status
-pwagent run discover --watch --stop
+$ pwagent run discover --source local
+$ pwagent run discover --source ado --pipeline 23878 --build 4587201
+$ pwagent run discover --source github --run-id 12345 --repo microsoft/playwright-tests
+$ pwagent run discover --source kusto --pipeline 23878 --window 7d
+$ pwagent run discover --watch
+$ pwagent run discover --watch --poll-seconds 120 --max-dispatch 10
+$ pwagent run discover --watch --status
+$ pwagent run discover --watch --stop
 ```
 
 Output (every mode): `~/.pwagent/runs/<run-id>/failures.json` for downstream agents to consume.
+
+---
 
 ### triage — failure classifier
 
 Classifies one failure as `ProductBug` / `TestCodeBug` / `Environment` / `Inconclusive` with a confidence score. **Always start here** when you have a failing test or a red build.
 
-```bash
-# From an ADO build run id
-pwagent run triage --run-id 89211
-
-# From a local artifact
-pwagent run triage --artifact ./failures.json
-
-# Free-text describing the failure
-pwagent run triage "tests/checkout/upsell.spec.ts:23 times out after 30s on click(submit)"
-
-# Demo / canned fixture (no live ADO needed)
-pwagent run triage --example
+```
+› @pwagent-triage --run-id 89211
+› @pwagent-triage --artifact ./failures.json
+› @pwagent-triage tests/checkout/upsell.spec.ts:23 times out after 30s on click(submit)
 ```
 
-After a verdict is emitted, run `pwagent review` to stamp it before invoking `fix`.
+```bash
+$ pwagent run triage --run-id 89211
+$ pwagent run triage --artifact ./failures.json
+$ pwagent run triage "tests/checkout/upsell.spec.ts:23 times out after 30s on click(submit)"
+$ pwagent run triage --example    # canned fixture, no live ADO needed
+```
+
+After a verdict is emitted, stamp it with `@pwagent-review` (chat) or `pwagent review` (shell) before invoking fix.
+
+---
 
 ### analyze — read-only analyzer (three modes)
 
 Three orthogonal modes; pick exactly one per invocation. **Never mutates code.**
 
-```bash
-# Coverage gaps — walk src/ + tests/, find untested branches and error paths
-pwagent run analyze --scenarios
-pwagent run analyze --scenarios --path src/checkout
-pwagent run analyze --scenarios --min-coverage 70 --fail-on-critical
-
-# Flake ranking — top-N flakiest tests via Kusto
-pwagent run analyze --flakes --pipeline 23878 --top 10 --window 30d
-pwagent run analyze --flakes --pipeline 23878 --top 5 --format csv -o flakes.csv
-
-# Test code quality — hybrid regex + LLM review with 5-rubric grading
-pwagent run analyze --test-quality --files "tests/**/*.spec.ts"
-pwagent run analyze --test-quality --files "tests/checkout/**" --severity-min Medium
-pwagent run analyze --test-quality --files "tests/login.spec.ts" --pr-comment 12345
-pwagent run analyze --test-quality --files "tests/**/*.spec.ts" --severity-min High --file-bug
 ```
+› @pwagent-analyze --scenarios --path src/checkout
+› @pwagent-analyze --scenarios --min-coverage 70 --fail-on-critical
+› @pwagent-analyze --flakes --pipeline 23878 --top 10 --window 30d
+› @pwagent-analyze --test-quality --files "tests/checkout/**" --severity-min High
+› @pwagent-analyze grade my test quality and file bugs for high-severity findings
+```
+
+```bash
+$ pwagent run analyze --scenarios
+$ pwagent run analyze --scenarios --path src/checkout
+$ pwagent run analyze --scenarios --min-coverage 70 --fail-on-critical
+$ pwagent run analyze --flakes --pipeline 23878 --top 10 --window 30d
+$ pwagent run analyze --flakes --pipeline 23878 --top 5 --format csv -o flakes.csv
+$ pwagent run analyze --test-quality --files "tests/**/*.spec.ts"
+$ pwagent run analyze --test-quality --files "tests/checkout/**" --severity-min Medium
+$ pwagent run analyze --test-quality --files "tests/login.spec.ts" --pr-comment 12345
+$ pwagent run analyze --test-quality --files "tests/**/*.spec.ts" --severity-min High --file-bug
+```
+
+---
 
 ### review — HITL gate
 
 Interactive stamp loop. **Run this between `triage` and `fix`.**
 
+```
+› @pwagent-review
+› @pwagent-review --list
+```
+
 ```bash
-pwagent review                  # interactive
-pwagent review --list           # show pending verdicts without stamping
-pwagent review --batch < stamps.txt   # CI / scripted: one stamp per line
+$ pwagent review                         # interactive
+$ pwagent review --list                  # show pending verdicts without stamping
+$ pwagent review --batch < stamps.txt    # CI / scripted: one stamp per line
 ```
 
 Keys: `[p]` ProductBug · `[t]` TestCodeBug · `[s]` Skip · `[o]` Inconclusive
 
+---
+
 ### plan — build a fix plan
 
-```bash
-# From a fresh failures dump
-pwagent run plan --failures ./failures.json
-
-# From a stamped triage verdict
-pwagent run plan --from-triage 89211
-
-# From last week's scenario sweep
-pwagent run plan --from-scenario
-
-# Free-text framing
-pwagent run plan "we have 23 failing tests across checkout and account — group by likely root cause and order by impact"
 ```
+› @pwagent-plan --from-triage 89211
+› @pwagent-plan --from-scenario
+› @pwagent-plan we have 23 failing tests across checkout and account — group by root cause and order by impact
+```
+
+```bash
+$ pwagent run plan --failures ./failures.json
+$ pwagent run plan --from-triage 89211
+$ pwagent run plan --from-scenario
+$ pwagent run plan "we have 23 failing tests across checkout and account — group by likely root cause and order by impact"
+```
+
+---
 
 ### fix — patcher (atomic) + orchestrator (full chain)
 
-The whole patcher family in one agent. **`--scope`** enforces the directory boundary (`tests/` vs `src/`); **`--orchestrate`** runs the full chain.
+**`--scope`** enforces the directory boundary (`tests/` vs `src/`); **`--orchestrate`** runs the full chain.
 
 #### Orchestrator mode — full end-to-end
 
+```
+› @pwagent-fix --orchestrate --ado-pipeline 23878
+› @pwagent-fix --orchestrate --ado-pipeline 23878 --max-failures 25 --auto-stamp
+› @pwagent-fix --orchestrate --bug AB#54321
+› @pwagent-fix fix everything red in pipeline 23878 and open PRs
+```
+
 ```bash
-# Fix everything red in an ADO pipeline (was: ado-fix pipeline)
-pwagent run fix --orchestrate --ado-pipeline 23878
-pwagent run fix --orchestrate --ado-pipeline 23878 --max-failures 25 --auto-stamp
-
-# One build
-pwagent run fix --orchestrate --ado-build 4587201
-
-# One bug
-pwagent run fix --orchestrate --bug AB#54321
-
-# Batch — top-N open bugs in an area path
-pwagent run fix --orchestrate --bugs --top 5 --area "OneCRM\\UnifiedClient\\Tests"
+$ pwagent run fix --orchestrate --ado-pipeline 23878
+$ pwagent run fix --orchestrate --ado-pipeline 23878 --max-failures 25 --auto-stamp
+$ pwagent run fix --orchestrate --ado-build 4587201
+$ pwagent run fix --orchestrate --bug AB#54321
+$ pwagent run fix --orchestrate --bugs --top 5 --area "OneCRM\\UnifiedClient\\Tests"
 ```
 
 The chain it runs:
@@ -235,119 +262,137 @@ discover → triage (fan-out) → review (HITL) → plan → fix --scope <t|p> (
 
 #### Atomic mode — one patch from a plan
 
-```bash
-# Test-side patch (was: test-fix apply)
-pwagent run fix --scope test --plan ./fix-plan.json --test "login should redirect"
-
-# Product-side patch (was: product-fix apply). Requires [p] stamp.
-pwagent run fix --scope product --plan ./fix-plan.json --test "login should redirect"
-
-# Let scope come from the latest review.stamp for this test+hash
-pwagent run fix --scope auto --plan ./fix-plan.json --test "login should redirect"
+```
+› @pwagent-fix --scope test --plan ./fix-plan.json --test "login should redirect"
+› @pwagent-fix --from-triage 89211
+› @pwagent-fix --diff-only --from-triage 89211
 ```
 
-#### From-triage / from-bug — single-failure shortcut
-
 ```bash
-pwagent run fix --from-triage 89211          # was: heal --from-triage
-pwagent run fix --bug AB#54321               # was: heal --bug
-pwagent run fix --diff-only --from-triage 89211   # propose patch, do not write or PR
+$ pwagent run fix --scope test --plan ./fix-plan.json --test "login should redirect"
+$ pwagent run fix --scope product --plan ./fix-plan.json --test "login should redirect"
+$ pwagent run fix --scope auto --plan ./fix-plan.json --test "login should redirect"
+$ pwagent run fix --from-triage 89211
+$ pwagent run fix --bug AB#54321
+$ pwagent run fix --diff-only --from-triage 89211
 ```
+
+---
 
 ### validate — twice-runner
 
-Two modes — `--test` runs a Playwright test twice; `--a11y` scans a URL with axe-core before and after a fix.
+```
+› @pwagent-validate --test tests/login.spec.ts
+› @pwagent-validate --test tests/login.spec.ts --repeat 5
+› @pwagent-validate --a11y --bug AB#54321
+› @pwagent-validate run the login test twice and tell me if it's flaky
+```
 
 ```bash
-# Run the test twice (gates the PR)
-pwagent run validate --test tests/login.spec.ts
-pwagent run validate --test tests/login.spec.ts --repeat 5
-pwagent run validate --test tests/login.spec.ts --grep "happy path"
-
-# axe-core before/after; posts the diff back to the ADO bug
-pwagent run validate --a11y --bug AB#54321
-pwagent run validate --a11y --bug AB#54321 --url https://app.example.com/login
+$ pwagent run validate --test tests/login.spec.ts
+$ pwagent run validate --test tests/login.spec.ts --repeat 5
+$ pwagent run validate --test tests/login.spec.ts --grep "happy path"
+$ pwagent run validate --a11y --bug AB#54321
+$ pwagent run validate --a11y --bug AB#54321 --url https://app.example.com/login
 ```
+
+---
 
 ### publish — open the PR
 
-ADO uses REST (never `az pr create`, which silently strips ArtifactLinks). GitHub uses `gh pr create`. **Never auto-merges.**
+ADO uses REST (never `az pr create` — silently strips ArtifactLinks). GitHub uses `gh pr create`. **Never auto-merges.**
+
+```
+› @pwagent-publish --branch pwagent/fix/AB54321-fix-login --target main --bug AB#54321
+› @pwagent-publish --branch pwagent/author/cart-coupon --target main --reviewer @someone --draft
+```
 
 ```bash
-pwagent run publish --branch pwagent/fix/AB54321-fix-login --target main --bug AB#54321 --results ./fix-results.json
-pwagent run publish --branch pwagent/author/cart-coupon --target main --reviewer @someone --draft
+$ pwagent run publish --branch pwagent/fix/AB54321-fix-login --target main --bug AB#54321 --results ./fix-results.json
+$ pwagent run publish --branch pwagent/author/cart-coupon --target main --reviewer @someone --draft
 ```
+
+---
 
 ### author — new-test writer
 
-```bash
-# Free-text scenario
-pwagent run author --scenario "logged-in user applies a coupon, sees the discount, removes it"
+New tests land in `tests/**/<feature>/<scenario>.generated.spec.ts` with a 7-day probation deadline in the header comment. `review` promotes them out of probation.
 
-# From a scenario-gap row produced by `analyze --scenarios`
-pwagent run author --from-gap ScenarioGap-0042
-
-# Coverage hint — pick an untested flow under this path
-pwagent run author --coverage-gap "checkout/payment-methods/apple-pay"
-
-# Workspace-pinned style
-pwagent run author --cwd D:/code/my-tests --scenario "add tests for the new orders page using the existing POM"
+```
+› @pwagent-author write a test for a logged-in user applying a coupon, seeing the discount, then removing it
+› @pwagent-author --from-gap ScenarioGap-0042
+› @pwagent-author --coverage-gap "checkout/payment-methods/apple-pay"
 ```
 
-New tests land in `tests/**/<feature>/<scenario>.generated.spec.ts` with a 7-day probation deadline in the header comment. `review` promotes them out of probation.
+```bash
+$ pwagent run author "logged-in user applies a coupon, sees the discount, removes it"
+$ pwagent run author --from-gap ScenarioGap-0042
+$ pwagent run author --coverage-gap "checkout/payment-methods/apple-pay"
+$ pwagent run author --cwd D:/code/my-tests "add tests for the new orders page using the existing POM"
+```
+
+---
 
 ### auth — auth-flow specialist
 
-```bash
-# Add a new role
-pwagent run auth --add-role tenant-admin
-
-# Refresh expired storage state
-pwagent run auth --refresh-state admin
-
-# Diagnose an auth-related failure
-pwagent run auth --diagnose --trace ./failure.zip
-
-# Free-text
-pwagent run auth "our login test fails 20% of the time on the MFA prompt — investigate and propose a fix that doesn't disable MFA in tests"
 ```
+› @pwagent-auth --add-role tenant-admin
+› @pwagent-auth --refresh-state admin
+› @pwagent-auth --diagnose --trace ./failure.zip
+› @pwagent-auth our login test fails 20% of the time on the MFA prompt — investigate and propose a fix that doesn't disable MFA in tests
+```
+
+```bash
+$ pwagent run auth --add-role tenant-admin
+$ pwagent run auth --refresh-state admin
+$ pwagent run auth --diagnose --trace ./failure.zip
+$ pwagent run auth "our login test fails 20% of the time on the MFA prompt — investigate and propose a fix that doesn't disable MFA in tests"
+```
+
+---
 
 ### record — canonical state writer
 
 Two kinds — both share the append-only contract:
 
-```bash
-# Matrix — bug ↔ test ↔ verdict ↔ stamp traceability
-pwagent run record --kind matrix --op import --source ado --bug-ids 12345,12346,12347
-pwagent run record --kind matrix --op sync --tests "tests/**/*.spec.ts"
-pwagent run record --kind matrix --op link --bug AB#54321 --test "tests/login.spec.ts"
-pwagent run record --kind matrix --op query --bug AB#54321
-pwagent run record --kind matrix --op decide --test "tests/login.spec.ts" --verdict TestCode --confidence 0.91 --rationale "selector drift"
-pwagent run record --kind matrix --op stamp --test "tests/login.spec.ts" --stamp t --operator you@example.com
-pwagent run record --kind matrix --op gap --test "tests/login.spec.ts" --gap ScenarioGap-0042 --severity Medium
-
-# Patterns — distill successful fixes into Kusto FixPatterns table
-pwagent run record --kind patterns --from ./fix-results.json
 ```
+› @pwagent-record --kind matrix --op import --source ado --bug-ids 12345,12346
+› @pwagent-record --kind matrix --op query --bug AB#54321
+› @pwagent-record --kind patterns --from ./fix-results.json
+› @pwagent-record link bug AB#54321 to test tests/login.spec.ts in the traceability matrix
+```
+
+```bash
+$ pwagent run record --kind matrix --op import --source ado --bug-ids 12345,12346,12347
+$ pwagent run record --kind matrix --op sync --tests "tests/**/*.spec.ts"
+$ pwagent run record --kind matrix --op link --bug AB#54321 --test "tests/login.spec.ts"
+$ pwagent run record --kind matrix --op query --bug AB#54321
+$ pwagent run record --kind matrix --op decide --test "tests/login.spec.ts" --verdict TestCode --confidence 0.91 --rationale "selector drift"
+$ pwagent run record --kind matrix --op stamp --test "tests/login.spec.ts" --stamp t --operator you@example.com
+$ pwagent run record --kind matrix --op gap --test "tests/login.spec.ts" --gap ScenarioGap-0042 --severity Medium
+$ pwagent run record --kind patterns --from ./fix-results.json
+```
+
+---
 
 ### report — weekly + ad-hoc reports
 
+```
+› @pwagent-report --window 7d
+› @pwagent-report --kind flake-rank --pipeline 23878
+› @pwagent-report give me a table of every triage verdict for fix-related runs last week with confidence scores
+› @pwagent-report what's our scenario coverage trend over the last 30 days
+```
+
 ```bash
-# Default — last 7 days
-pwagent run report
-
-# Custom window
-pwagent run report --window 30d
-pwagent run report --since 2026-05-01 --until 2026-05-14
-
-# Specific report kind
-pwagent run report --kind weekly
-pwagent run report --kind flake-rank --pipeline 23878
-pwagent run report --kind triage --window 7d
-pwagent run report --kind scenario-coverage
-
-# Targeted question
-pwagent run report "give me a table of every triage verdict for fix-related runs last week, with confidence"
+$ pwagent run report
+$ pwagent run report --window 30d
+$ pwagent run report --since 2026-05-01 --until 2026-05-14
+$ pwagent run report --kind weekly
+$ pwagent run report --kind flake-rank --pipeline 23878
+$ pwagent run report --kind triage --window 7d
+$ pwagent run report --kind scenario-coverage
+$ pwagent run report "give me a table of every triage verdict for fix-related runs last week, with confidence"
 ```
 
 ---
