@@ -20,14 +20,14 @@
  *   1. `pwagent` (no args, TTY) → ensure .pwagent/ exists (scaffold from
  *      embedded content if missing) → mirror .pwagent/ → .squad/ → spawn
  *      squad-cli with SQUAD_BRAND_* env vars.
- *   2. Squad reads .squad/, loads our 13 agents pre-loaded.
+ *   2. Squad reads .squad/, loads our 16 agents pre-loaded.
  *
  * `pwagent run <agent>` remains as the CI / unattended path. It uses
  * pwagent's own coordinator + SDK adapter — no Squad dependency on CI runners.
  */
 
 import { spawn } from "node:child_process";
-import { cp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile, rm, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -105,9 +105,16 @@ function embeddedContentDir(): string {
 }
 
 /**
- * Ensure the cwd has a `.pwagent/` directory populated with our 13 agents,
- * 60+ skills, routing.md, team.md, ceremonies.md, master-prompt.md.
- * Creates only what's missing — never overwrites user customisations.
+ * Ensure the cwd has a `.pwagent/` directory populated with all embedded
+ * agents, skills, routing.md, team.md, ceremonies.md, master-prompt.md.
+ *
+ * Strategy:
+ *   - New agents in embedded content are **added** to .pwagent/agents/ on
+ *     every launch (additive sync). Existing agent dirs are never overwritten
+ *     so user customisations survive upgrades.
+ *   - Top-level md files (routing.md, team.md, etc.) are written only if
+ *     they don't exist yet — same preservation rule.
+ *   - skills/ is written only if missing entirely.
  *
  * Then mirrors `.pwagent/` → `.squad/` (overwriting `.squad/` so Squad CLI
  * always sees the latest user edits in `.pwagent/`).
@@ -120,38 +127,40 @@ async function ensureScaffolding(cwd: string): Promise<void> {
     );
   }
 
-  // ── .pwagent/ — canonical, scaffold only if missing ─────────────────────
+  // ── .pwagent/ — canonical, additive sync ────────────────────────────────
   const pwagentDir = join(cwd, ".pwagent");
-  if (!existsSync(pwagentDir)) {
-    await mkdir(pwagentDir, { recursive: true });
-    await cp(join(embedded, "agents"), join(pwagentDir, "agents"), { recursive: true });
+  const pwagentAgentsDir = join(pwagentDir, "agents");
+  await mkdir(pwagentAgentsDir, { recursive: true });
+
+  // Additive agent sync: copy any embedded agent that isn't in .pwagent/agents/ yet.
+  const embeddedAgentsDir = join(embedded, "agents");
+  if (existsSync(embeddedAgentsDir)) {
+    const embeddedAgents = await readdir(embeddedAgentsDir, { withFileTypes: true });
+    let added = 0;
+    for (const entry of embeddedAgents) {
+      if (!entry.isDirectory()) continue;
+      const dest = join(pwagentAgentsDir, entry.name);
+      if (!existsSync(dest)) {
+        await cp(join(embeddedAgentsDir, entry.name), dest, { recursive: true });
+        added++;
+      }
+    }
+    if (added > 0) console.log(c.dim(`  synced ${added} new agent(s) to .pwagent/agents/`));
+  }
+
+  // Skills: copy only if the directory is entirely absent.
+  if (!existsSync(join(pwagentDir, "skills"))) {
     await cp(join(embedded, "skills"), join(pwagentDir, "skills"), { recursive: true });
-    for (const file of ["routing.md", "team.md", "ceremonies.md", "master-prompt.md"]) {
-      try {
-        const content = await readFile(join(embedded, file), "utf8");
-        await writeFile(join(pwagentDir, file), content, "utf8");
-      } catch {
-        /* skip missing source file */
-      }
-    }
-    console.log(c.dim(`  scaffolded .pwagent/ at ${pwagentDir}`));
-  } else {
-    // Top-level pwagent dir exists. Top up any individual files that are
-    // missing (e.g. user wiped routing.md or never had master-prompt.md).
-    if (!existsSync(join(pwagentDir, "agents"))) {
-      await cp(join(embedded, "agents"), join(pwagentDir, "agents"), { recursive: true });
-    }
-    if (!existsSync(join(pwagentDir, "skills"))) {
-      await cp(join(embedded, "skills"), join(pwagentDir, "skills"), { recursive: true });
-    }
-    for (const file of ["routing.md", "team.md", "ceremonies.md", "master-prompt.md"]) {
-      if (existsSync(join(pwagentDir, file))) continue;
-      try {
-        const content = await readFile(join(embedded, file), "utf8");
-        await writeFile(join(pwagentDir, file), content, "utf8");
-      } catch {
-        /* skip */
-      }
+  }
+
+  // Top-level md files: write only if missing (preserve user edits).
+  for (const file of ["routing.md", "team.md", "ceremonies.md", "master-prompt.md"]) {
+    if (existsSync(join(pwagentDir, file))) continue;
+    try {
+      const content = await readFile(join(embedded, file), "utf8");
+      await writeFile(join(pwagentDir, file), content, "utf8");
+    } catch {
+      /* skip missing source file */
     }
   }
 
