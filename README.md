@@ -37,6 +37,7 @@ Standalone CLI for multi-agent Playwright testing. **Squad design, self-containe
 
 ## Table of contents
 
+- [Setup](#setup)
 - [What it is](#what-it-is)
 - [Where pwagent runs (IDE / CLI compatibility)](#where-pwagent-runs-ide--cli-compatibility)
 - [Usage guide with example prompts](USAGE.md)
@@ -47,7 +48,6 @@ Standalone CLI for multi-agent Playwright testing. **Squad design, self-containe
 - [Squad principles (adopted)](#squad-principles-adopted)
 - [What we deliberately don't adopt](#what-we-deliberately-dont-adopt)
 - [Technology stack](#technology-stack)
-- [Setup](#setup)
 - [Usage](#usage)
 - [Portal](#portal)
 - [Scheduler](#scheduler)
@@ -56,6 +56,129 @@ Standalone CLI for multi-agent Playwright testing. **Squad design, self-containe
 - [Status & roadmap](#status--roadmap)
 - [Contributing](#contributing)
 - [License](#license)
+
+---
+
+## Setup
+
+### 1. Install via npm workspaces (single command for CLI + portal)
+
+```powershell
+cd D:\gith\pwagent
+npm install            # installs both cli/ and portal/ deps in one shot
+npm run build          # builds both packages
+npm link --workspace cli   # makes `pwagent` globally available from this checkout
+```
+
+The root [package.json](package.json) declares `workspaces: ["cli", "portal"]`, so a single `npm install` at the root hoists shared deps and links the two packages. Per-package commands:
+
+```powershell
+npm run build:cli      # cli only
+npm run build:portal   # portal only
+npm test               # cli vitest suite
+npm run dev:portal     # portal in dev mode at http://127.0.0.1:7337
+```
+
+### 2. Copy the sample config
+
+```powershell
+copy pwagent.config.example.json "$env:USERPROFILE\.pwagent\config.json"
+notepad "$env:USERPROFILE\.pwagent\config.json"   # edit your ADO org + project
+```
+
+User state lives at `~/.pwagent/` (Windows: `C:\Users\<you>\.pwagent\`).
+
+### 3. Verify prerequisites and install missing ones
+
+```powershell
+pwagent prereqs                     # report only
+pwagent prereqs --install           # install missing recommended (interactive)
+pwagent prereqs --install --yes     # non-interactive — accept all
+```
+
+`pwagent` is a coordinator — most heavy lifting happens through other CLIs we shell out to. The full prereq matrix:
+
+| Tier | Prereq | Why pwagent needs it | Auto-install |
+|---|---|---|---|
+| required | `node` (≥22) | Runtime for the binary itself | manual (suggestion: `nvm install 22` / `winget install OpenJS.NodeJS.LTS`) |
+| required | `git` | Repo ops, patches, branching, PR prep | winget / brew / apt / dnf / pacman |
+| required | `gh` | Copilot SDK auth. Also: PR creation, Issues, repo discovery | winget / brew / apt |
+| required | **`gh auth (logged in)`** | Copilot subscription must be active | runs `gh auth login --web` |
+| required | `az` | ADO triage + PR creation; Kusto auth | winget / brew / apt |
+| required | `az pipelines` extension | Pipeline run details for triage | `az extension add --name azure-devops` |
+| required | `@axe-core/cli` | Accessibility scans (a11y verifier) | `npm i -g @axe-core/cli` |
+| required | kusto CLI | `kusto` skill, flake history | manual ([aka.ms/kustofree](https://aka.ms/kustofree)) |
+| recommended | `@playwright/test` | validator / fixer / author | `npm i -g @playwright/test` |
+| recommended | Playwright browsers | headless Chromium / Firefox / WebKit | `npx playwright install` |
+| optional | VS Code | Only needed for the `@pwagent` chat wrapper | winget / brew |
+
+Package-manager detection:
+
+| Platform | Detected by | Falls back to |
+|---|---|---|
+| Windows | `winget --version` → `winget install` | manual link |
+| macOS | `brew --version` → `brew install` | manual link |
+| Debian/Ubuntu | `apt -v` + sudo available → `sudo apt install` | manual link |
+| Fedora/RHEL | `dnf --version` + sudo available → `sudo dnf install` | manual link |
+| Arch | `pacman --version` + sudo available → `sudo pacman -S` | manual link |
+| Node-globals | always `npm install -g` | n/a |
+| gh extensions | always `gh extension install` | n/a |
+
+Safety rules:
+
+- **No silent installs.** Default is `pwagent prereqs` (report only). `--install` requires the flag.
+- **No sudo without explicit consent.** Linux installs show the exact `sudo` line and wait for confirmation.
+- **Network-only when needed.** Report mode makes no network calls — only `which` / `--version` probes.
+
+### 4. Authenticate with GitHub
+
+```powershell
+pwagent login           # wraps `gh auth login --web`
+pwagent whoami          # verify Copilot is reachable
+```
+
+### 5. Initialise config
+
+```powershell
+pwagent init            # interactive: model, ADO org/project, default repo
+pwagent doctor          # composed prereq + config + provider + features view
+```
+
+Expected `pwagent doctor` output:
+
+```
+binary version    0.1.0
+charters          10 (embedded)
+skills            64 (embedded)
+config            C:\Users\<you>\.pwagent\config.json    OK
+provider          github-copilot-sdk (claude-sonnet-4.5)
+copilot probe     [✓] Copilot SDK reachable (812ms)
+prerequisites
+  required        node (≥22) ✓ · git ✓ · gh ✓ · gh auth (logged in) ✓ · az ✓ · az pipelines ext ✓ · @axe-core/cli ✓ · kusto CLI ✓
+  recommended     playwright ✓ · playwright browsers ✓
+  optional        VS Code ✓
+features
+  test execution  available
+  ADO triage      available
+  ADO PRs         available
+  GitHub PRs      available
+  GitHub Issues   available
+  a11y verify     available
+  flake finder    available
+  chat wrapper    available
+scheduler         not running    (run: pwagent scheduler start)
+Ready.
+```
+
+`pwagent doctor --fix` is an alias for `pwagent prereqs --install --yes` followed by re-verification.
+
+### 6. (Optional) Run the portal
+
+```powershell
+cd portal
+npm install
+npm run dev             # http://127.0.0.1:7337
+```
 
 ---
 
@@ -372,129 +495,6 @@ Squad describes three ways an agent team keeps moving without a user typing. `pw
 | **Portal framework** | Next.js 15 App Router + React 19 | SSR + RSC for streaming |
 | **Portal UI** | [shadcn/ui](https://ui.shadcn.com/) on Tailwind 3.4 | Hand-written components in `portal/components/ui/` |
 | **Icons** | [lucide-react](https://lucide.dev/) | Consistent with shadcn ecosystem |
-
----
-
-## Setup
-
-### 1. Install via npm workspaces (single command for CLI + portal)
-
-```powershell
-cd D:\gith\pwagent
-npm install            # installs both cli/ and portal/ deps in one shot
-npm run build          # builds both packages
-npm link --workspace cli   # makes `pwagent` globally available from this checkout
-```
-
-The root [package.json](package.json) declares `workspaces: ["cli", "portal"]`, so a single `npm install` at the root hoists shared deps and links the two packages. Per-package commands:
-
-```powershell
-npm run build:cli      # cli only
-npm run build:portal   # portal only
-npm test               # cli vitest suite
-npm run dev:portal     # portal in dev mode at http://127.0.0.1:7337
-```
-
-### 2. Copy the sample config
-
-```powershell
-copy pwagent.config.example.json "$env:USERPROFILE\.pwagent\config.json"
-notepad "$env:USERPROFILE\.pwagent\config.json"   # edit your ADO org + project
-```
-
-User state lives at `~/.pwagent/` (Windows: `C:\Users\<you>\.pwagent\`).
-
-### 3. Verify prerequisites and install missing ones
-
-```powershell
-pwagent prereqs                     # report only
-pwagent prereqs --install           # install missing recommended (interactive)
-pwagent prereqs --install --yes     # non-interactive — accept all
-```
-
-`pwagent` is a coordinator — most heavy lifting happens through other CLIs we shell out to. The full prereq matrix:
-
-| Tier | Prereq | Why pwagent needs it | Auto-install |
-|---|---|---|---|
-| required | `node` (≥22) | Runtime for the binary itself | manual (suggestion: `nvm install 22` / `winget install OpenJS.NodeJS.LTS`) |
-| required | `git` | Repo ops, patches, branching, PR prep | winget / brew / apt / dnf / pacman |
-| required | `gh` | Copilot SDK auth. Also: PR creation, Issues, repo discovery | winget / brew / apt |
-| required | **`gh auth (logged in)`** | Copilot subscription must be active | runs `gh auth login --web` |
-| required | `az` | ADO triage + PR creation; Kusto auth | winget / brew / apt |
-| required | `az pipelines` extension | Pipeline run details for triage | `az extension add --name azure-devops` |
-| required | `@axe-core/cli` | Accessibility scans (a11y verifier) | `npm i -g @axe-core/cli` |
-| required | kusto CLI | `kusto` skill, flake history | manual ([aka.ms/kustofree](https://aka.ms/kustofree)) |
-| recommended | `@playwright/test` | validator / fixer / author | `npm i -g @playwright/test` |
-| recommended | Playwright browsers | headless Chromium / Firefox / WebKit | `npx playwright install` |
-| optional | VS Code | Only needed for the `@pwagent` chat wrapper | winget / brew |
-
-Package-manager detection:
-
-| Platform | Detected by | Falls back to |
-|---|---|---|
-| Windows | `winget --version` → `winget install` | manual link |
-| macOS | `brew --version` → `brew install` | manual link |
-| Debian/Ubuntu | `apt -v` + sudo available → `sudo apt install` | manual link |
-| Fedora/RHEL | `dnf --version` + sudo available → `sudo dnf install` | manual link |
-| Arch | `pacman --version` + sudo available → `sudo pacman -S` | manual link |
-| Node-globals | always `npm install -g` | n/a |
-| gh extensions | always `gh extension install` | n/a |
-
-Safety rules:
-
-- **No silent installs.** Default is `pwagent prereqs` (report only). `--install` requires the flag.
-- **No sudo without explicit consent.** Linux installs show the exact `sudo` line and wait for confirmation.
-- **Network-only when needed.** Report mode makes no network calls — only `which` / `--version` probes.
-
-### 4. Authenticate with GitHub
-
-```powershell
-pwagent login           # wraps `gh auth login --web`
-pwagent whoami          # verify Copilot is reachable
-```
-
-### 5. Initialise config
-
-```powershell
-pwagent init            # interactive: model, ADO org/project, default repo
-pwagent doctor          # composed prereq + config + provider + features view
-```
-
-Expected `pwagent doctor` output:
-
-```
-binary version    0.1.0
-charters          10 (embedded)
-skills            64 (embedded)
-config            C:\Users\<you>\.pwagent\config.json    OK
-provider          github-copilot-sdk (claude-sonnet-4.5)
-copilot probe     [✓] Copilot SDK reachable (812ms)
-prerequisites
-  required        node (≥22) ✓ · git ✓ · gh ✓ · gh auth (logged in) ✓ · az ✓ · az pipelines ext ✓ · @axe-core/cli ✓ · kusto CLI ✓
-  recommended     playwright ✓ · playwright browsers ✓
-  optional        VS Code ✓
-features
-  test execution  available
-  ADO triage      available
-  ADO PRs         available
-  GitHub PRs      available
-  GitHub Issues   available
-  a11y verify     available
-  flake finder    available
-  chat wrapper    available
-scheduler         not running    (run: pwagent scheduler start)
-Ready.
-```
-
-`pwagent doctor --fix` is an alias for `pwagent prereqs --install --yes` followed by re-verification.
-
-### 6. (Optional) Run the portal
-
-```powershell
-cd portal
-npm install
-npm run dev             # http://127.0.0.1:7337
-```
 
 ---
 
