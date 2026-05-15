@@ -2,44 +2,44 @@
 title: Prerequisites
 ---
 
+import { Callout } from 'nextra/components'
+
 # Prerequisites
 
-pwagent is a coordinator — most heavy lifting happens through other CLIs it shells out to. The `pwagent prereqs` command detects, reports, and (with `--install`) installs the missing ones.
+pwagent is a coordinator — most heavy lifting happens through CLIs it shells out to and MCP servers it calls as tools. **Both CLIs and MCP servers are required before first use.** The `pwagent prereqs` command detects, reports, and (with `--install`) installs the missing CLI tools.
 
-## The matrix
+<Callout type="warning">
+**Mandatory onboarding step.** Run `pwagent prereqs` before your first agent invocation. Missing prereqs cause silent failures — agents simply can't spawn the tools they need.
+</Callout>
 
-| Tier | Prereq | Why pwagent needs it | Auto-install |
-|---|---|---|---|
-| **required** | `node` (≥22) | Runtime for the binary itself | manual (`nvm install 22` / `winget install OpenJS.NodeJS.LTS`) |
-| required | `git` | Repo ops, patches, branching, PR prep | winget / brew / apt / dnf / pacman |
-| required | `gh` | Copilot SDK auth. Also: PR creation, Issues, repo discovery | winget / brew / apt |
-| required | **`gh auth` (logged in)** | Copilot subscription must be active | runs `gh auth login --web` |
-| required | `az` | ADO triage + PR creation; Kusto auth | winget / brew / apt |
-| required | `az pipelines` extension | Pipeline run details for triage | `az extension add --name azure-devops` |
-| required | `@axe-core/cli` | Accessibility scans (a11y verifier) | `npm i -g @axe-core/cli` |
-| required | kusto CLI | `kusto` skill, flake history | manual ([aka.ms/kustofree](https://aka.ms/kustofree)) |
-| **recommended** | `@playwright/test` | validator / fixer / author | `npm i -g @playwright/test` |
-| recommended | Playwright browsers | headless Chromium / Firefox / WebKit | `npx playwright install` |
-| **optional** | VS Code | Only needed for the `@pwagent` chat wrapper | winget / brew |
+## CLI tools and runtimes
 
-## Reporting only
+| Tier | ID | Tool | Why pwagent needs it | Auto-install |
+|---|---|---|---|---|
+| **required** | `node` | node (≥22) | Runtime for the binary itself — `@github/copilot-sdk` requires Node 22+ | manual ([nodejs.org](https://nodejs.org/en/download)) |
+| required | `git` | git | Repo ops, patches, branching, PR prep | winget / brew / apt / dnf / pacman |
+| required | `gh` | gh | Copilot SDK auth. Also: PR creation, Issues, repo discovery | winget / brew / apt |
+| required | `gh-auth` | gh auth (logged in) | Copilot subscription must be active | runs `gh auth login --web` |
+| required | `az` | az | ADO triage + PR creation; Kusto auth | winget / brew / apt |
+| required | `az-pipelines` | az pipelines ext | Pipeline run details for triage | `az extension add --name azure-devops` |
+| required | `axe` | @axe-core/cli | Live-URL WCAG scanning. Used by `pwagent-a11y --scan`, `--verify-fix`, and `pwagent-validate --a11y` | `npm i -g @axe-core/cli` |
+| required | `kusto` | kusto CLI | Flake history + S360 Kusto queries | manual ([aka.ms/kustofree](https://aka.ms/kustofree)) |
+| **recommended** | `playwright` | @playwright/test | `validate --test`, `fix`, `author` run `npx playwright test` | `npm i -g @playwright/test` |
+| recommended | `playwright-browsers` | playwright browsers | Headless Chromium / Firefox / WebKit | `npx playwright install` |
+| recommended | `axe-playwright` | @axe-core/playwright | Playwright-integrated axe tests. `pwagent-a11y --test-gen` and `--review interactive` generate `AxeBuilder` test files. Add as a devDep per project: `npm i -D @axe-core/playwright` | `npm i -D @axe-core/playwright` (per project) |
+| **optional** | `vscode` | VS Code | Only needed for the `@pwagent` chat wrapper | winget / brew |
 
-```powershell
-pwagent prereqs                       # report; no network changes
-```
-
-Reads `which` / `--version` for each entry. Returns exit 0 if everything required is present, 1 otherwise.
-
-## Installing missing ones
+### Checking and installing
 
 ```powershell
+pwagent prereqs                       # report only — no network changes
 pwagent prereqs --install             # interactive — prompts before each install
 pwagent prereqs --install --yes       # non-interactive, accept all
 pwagent prereqs --install --include-optional --yes
-pwagent prereqs --install --skip "azure-cli,kusto-cli"
+pwagent prereqs --install --skip "kusto"
 ```
 
-## Platform detection
+### Platform detection
 
 | Platform | Detected by | Falls back to |
 |---|---|---|
@@ -51,21 +51,159 @@ pwagent prereqs --install --skip "azure-cli,kusto-cli"
 | Node globals | always `npm install -g` | n/a |
 | gh extensions | always `gh extension install` | n/a |
 
-## Safety rules
+---
 
-- **No silent installs.** Default is report-only. `--install` requires the flag.
-- **No sudo without explicit consent.** Linux installs show the exact `sudo` line and wait for confirmation.
-- **Network-only when needed.** Report mode makes no network calls — only `which` / `--version` probes.
+## MCP servers
 
-## Extending the matrix
+MCP servers are Claude Code tool providers — not CLIs. Agents call them via `mcp__<server-id>__<tool-name>` patterns. They are configured in Claude Code's MCP settings (`~/.claude/claude_desktop_config.json` or the workspace-level `.claude/settings.json`), not via `pwagent prereqs --install`.
 
-Edit [`cli/src/prereqs/matrix.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/prereqs/matrix.ts) — append a `Prereq` object with `id`, `label`, `reason`, `tier`, `detect`, `installers`, `unlocks`. The vitest suite in [`cli/tests/prereqs.test.ts`](https://github.com/microsoft/pwagent/blob/main/cli/tests/prereqs.test.ts) catches incomplete shapes.
+<Callout type="error">
+**Required for S360 and ADO-linked accessibility work.** `pwagent-s360`, `pwagent-a11y --verify-fix`, and `pwagent-publish` are non-functional without at least one ADO MCP configured. `pwagent-s360 --fix` additionally requires Kusto MCP and S360 MCP.
+</Callout>
+
+| Server ID | Label | Required by | What it enables |
+|---|---|---|---|
+| `kusto` | Kusto MCP | `pwagent-s360`, `pwagent-analyze`, `pwagent-triage` | KQL queries — S360 action items, flake history, pipeline telemetry |
+| `s360` | S360 MCP | `pwagent-s360` | Update S360 action item ETA and status after a fix is verified |
+| `dynamicscrm-repo` | ADO MCP — DynamicsCRM | `pwagent-s360`, `pwagent-a11y`, `pwagent-publish` | Create/update ADO bugs + PRs in `dynamicscrm.visualstudio.com` |
+| `msazure-repo` | ADO MCP — msazure | `pwagent-s360`, `pwagent-a11y`, `pwagent-publish` | Create/update ADO bugs + PRs in `msazure.visualstudio.com` |
+
+Configure the ADO MCP for the org your workspace repo lives in — you don't need both.
+
+### Setup: Kusto MCP
+
+Add to `~/.claude/claude_desktop_config.json` under `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "kusto": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/kusto-mcp"],
+      "env": {
+        "KUSTO_CLUSTER": "https://s360prodro.kusto.windows.net",
+        "KUSTO_DATABASE": "service360db"
+      }
+    }
+  }
+}
+```
+
+The S360 agent uses `s360prodro.kusto.windows.net / service360db`. The analyze agent uses the PowerApps-Engineering cluster — override `KUSTO_CLUSTER` per invocation or add a second server entry.
+
+Full setup guide: [aka.ms/kusto-mcp-setup](https://aka.ms/kusto-mcp-setup)
+
+### Setup: S360 MCP
+
+```json
+{
+  "mcpServers": {
+    "s360": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/s360-mcp"]
+    }
+  }
+}
+```
+
+Full setup guide: [aka.ms/s360-mcp-setup](https://aka.ms/s360-mcp-setup)
+
+### Setup: ADO MCP
+
+Install the one that matches your org. Replace `<your-personal-access-token>` with a PAT that has `Work Items (Read & Write)` and `Pull Requests (Read & Write)` scopes.
+
+**DynamicsCRM org** (`dynamicscrm.visualstudio.com`):
+
+```json
+{
+  "mcpServers": {
+    "dynamicscrm-repo": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/ado-mcp"],
+      "env": {
+        "ADO_ORG_URL": "https://dynamicscrm.visualstudio.com",
+        "ADO_PAT": "<your-personal-access-token>"
+      }
+    }
+  }
+}
+```
+
+**msazure org** (`msazure.visualstudio.com`):
+
+```json
+{
+  "mcpServers": {
+    "msazure-repo": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/ado-mcp"],
+      "env": {
+        "ADO_ORG_URL": "https://msazure.visualstudio.com",
+        "ADO_PAT": "<your-personal-access-token>"
+      }
+    }
+  }
+}
+```
+
+Full setup guide: [aka.ms/ado-mcp-setup](https://aka.ms/ado-mcp-setup)
+
+### Verify MCPs are live
+
+After adding MCP entries, restart Claude Code and run:
+
+```
+pwagent doctor --mcps
+```
+
+`pwagent doctor` probes each MCP server by calling a lightweight discovery tool and reports ✓ / ✗ per server. A ✗ here means the server didn't start or the config key is wrong — check `~/.claude/mcp.log` for the startup error.
+
+---
+
+## Checking everything at once
+
+```powershell
+pwagent doctor
+```
+
+`pwagent doctor` runs both the CLI prereq matrix and the MCP server probes in one pass. You should see `Ready.` and a full features matrix. Fix any ✗ before running agents.
+
+---
+
+## Per-workspace config
+
+After prereqs are green, each workspace needs a minimal config file:
+
+```powershell
+copy pwagent.config.example.json .pwagent\config.json
+```
+
+For S360 work, also add `.pwagent/s360.config.md`:
+
+```markdown
+# S360 Config
+adoOrg: https://dynamicscrm.visualstudio.com
+adoProject: OneCRM
+adoAreaPath: OneCRM\UnifiedClient\Tests
+```
+
+---
+
+## Extending the prereq matrix
+
+Edit [`cli/src/prereqs/matrix.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/prereqs/matrix.ts) — append a `Prereq` object with `id`, `label`, `reason`, `tier`, `detect`, `installers`, `unlocks`. For MCP servers edit [`cli/src/prereqs/mcps.ts`](https://github.com/microsoft/pwagent/blob/main/cli/src/prereqs/mcps.ts) — append an `MCPServer` object.
+
+The vitest suite in [`cli/tests/prereqs.test.ts`](https://github.com/microsoft/pwagent/blob/main/cli/tests/prereqs.test.ts) catches incomplete shapes on both files.
+
+---
 
 ## Common issues
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `gh auth (logged in)` reports ✗ even after `gh auth login` | Token doesn't include `read:user` scope | `gh auth refresh -s read:user` |
-| `kusto CLI` reports ✗ but `kusto.cli` is on PATH | Detector uses `kusto` not `kusto.cli` | Symlink or add `kusto.cli` to PATH as `kusto` |
-| `@axe-core/cli` reports ✗ after `npm i -g @axe-core/cli` | npm prefix differs from PATH | `npm config get prefix` and add `<prefix>` to PATH |
+| `gh auth (logged in)` reports ✗ after `gh auth login` | Token missing `read:user` scope | `gh auth refresh -s read:user` |
+| `kusto CLI` reports ✗ but binary is on PATH | Detector uses `kusto.cli` not `kusto` | Symlink `kusto.cli` to PATH as `kusto` |
+| `@axe-core/cli` reports ✗ after global install | npm prefix not on PATH | `npm config get prefix` → add `<prefix>/bin` to PATH |
+| `pwagent doctor --mcps` shows ✗ for `kusto` | Server didn't start | Check `~/.claude/mcp.log`; verify `KUSTO_CLUSTER` env var |
+| ADO MCP ✗ | PAT expired or missing scopes | Regenerate PAT with `Work Items (R/W)` and `Pull Requests (R/W)` |
 | `npx playwright --version` non-zero exit | Deprecation shim returns 1 | pwagent trusts the version regex over the exit code — auto-recovered |

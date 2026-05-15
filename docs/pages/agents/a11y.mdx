@@ -1,0 +1,129 @@
+---
+title: a11y
+description: Full-stack accessibility agent — WCAG 2.1 AA + MAS scanning, review, fix, verify, test-gen, and HTML report
+---
+
+import { Callout } from 'nextra/components'
+import { Cards, Card } from '../../components/Cards'
+
+# a11y
+
+The **a11y** agent is the full-stack accessibility specialist. It scans URLs and repos for WCAG violations, reviews code for contrast, color, links, rendering modes, responsive viewports, and interactive elements, auto-fixes violations, verifies fixes against ADO bugs, generates Playwright accessibility tests, and produces self-contained HTML compliance reports.
+
+It applies **Microsoft Accessibility Standards (MAS)** on top of WCAG 2.1 AA — stricter large-text contrast (4.5:1), focus indicator contrast (3:1), touch targets (44×44 px minimum), and Windows Narrator/UIA compatibility.
+
+## Identity
+
+- **Role:** Accessibility specialist (scan · review · fix · verify · test-gen · report)
+- **Project:** pwagent
+- **Default model:** Opus 4.7 or Sonnet 4.6 (accessibility audits benefit from deep reasoning — do not downgrade)
+
+## Invoking it
+
+### Chat shell
+
+```
+› @pwagent-a11y --scan https://localhost:3000/checkout
+› @pwagent-a11y --review contrast --path src/components
+› @pwagent-a11y --review color --path src/
+› @pwagent-a11y --review links --path src/
+› @pwagent-a11y --review modes --path src/
+› @pwagent-a11y --review viewports --path src/
+› @pwagent-a11y --review interactive --url http://localhost:3000
+› @pwagent-a11y --fix src/components/LoginForm.tsx
+› @pwagent-a11y --verify-fix http://localhost:3000/login color-contrast AB#54321
+› @pwagent-a11y --test-gen --component src/components/Modal.tsx
+› @pwagent-a11y --report --url http://localhost:3000
+```
+
+### CLI / CI
+
+```powershell
+pwagent run a11y --scan http://localhost:3000/checkout
+pwagent run a11y --scan-repo --base-url http://localhost:3000
+pwagent run a11y --review contrast --path src/components
+pwagent run a11y --review color --path src/
+pwagent run a11y --review links --path src/
+pwagent run a11y --review modes --path src/
+pwagent run a11y --review viewports --path src/
+pwagent run a11y --review interactive --url http://localhost:3000
+pwagent run a11y --fix src/components/LoginForm.tsx
+pwagent run a11y --verify-fix http://localhost:3000/login color-contrast AB#54321
+pwagent run a11y --test-gen --component src/components/Modal.tsx
+pwagent run a11y --test-gen --page /checkout --out tests/accessibility/
+pwagent run a11y --report --url http://localhost:3000
+pwagent run a11y --report --url http://localhost:3000 --theme hc-black --out report.html
+```
+
+## Modes
+
+| Flag | What it does |
+|---|---|
+| `--scan <url>` | Run axe-cli against the URL; output grouped by impact (critical → minor) |
+| `--scan-repo --base-url <url>` | Discover routes, batch-scan all pages, consolidated report |
+| `--review contrast --path <dir>` | Extract colors, verify 4.5:1 / 3:1 ratios, suggest compliant alternatives |
+| `--review color --path <dir>` | Detect WCAG 1.4.1 — information conveyed by color alone |
+| `--review links --path <dir>` | Detect WCAG 2.4.4 — generic/ambiguous link text |
+| `--review modes --path <dir>` | Check 8 MAS modes (HC Black/White, Forced Colors, Reduced Motion, Zoom, Text Spacing, Dark) |
+| `--review viewports --path <dir>` | Check 7 viewports (320px–2560px) — overflow, touch targets, iOS zoom triggers |
+| `--review interactive --url <url>` | Generate and run Playwright tests for 9 interactive element types |
+| `--fix <file-or-dir>` | Auto-apply ARIA fixes with confidence scoring (High / Medium / Low) |
+| `--verify-fix <url> <rule> <bug>` | Re-scan, compare against baseline, post result to ADO bug |
+| `--test-gen --component <file>` | Write `tests/accessibility/<component>.spec.ts` with axe-core + keyboard + ARIA tests |
+| `--report --url <url>` | Generate self-contained `accessibility-report.html` |
+
+## Skills it draws on
+
+| Skill file | Covers |
+|---|---|
+| `a11y/scan.md` | axe-cli scan workflow, JSON parse, impact grouping |
+| `a11y/scan-repo.md` | Route discovery, batch axe scan |
+| `a11y/review-contrast.md` | WCAG 1.4.3 / 1.4.11, MAS large-text 4.5:1 |
+| `a11y/review-color.md` | WCAG 1.4.1 color-only indicators |
+| `a11y/review-links.md` | WCAG 2.4.4 generic/ambiguous link text |
+| `a11y/review-modes.md` | 8 MAS rendering modes, `forced-colors`, `prefers-reduced-motion` |
+| `a11y/review-viewports.md` | 7 standard viewports, touch targets |
+| `a11y/review-interactive.md` | 9 interactive element types, Playwright test template |
+| `a11y/fix.md` | Confidence-scored ARIA auto-fix |
+| `a11y/verify-fix.md` | Post-fix axe scan + ADO bug update |
+| `a11y/test-gen.md` | `@axe-core/playwright` test templates |
+| `a11y/report-gen.md` | Self-contained HTML report, 8 themes |
+| `a11y/dev.md` | Accessibility-first code generation |
+| `a11y/MAS.md` | Microsoft Accessibility Standards quick reference |
+| `a11y/narrator-patterns.md` | 10 Windows Narrator / UIA fix patterns |
+
+## Standards applied
+
+MAS is loaded before every analysis session and overrides WCAG where stricter:
+
+| Area | WCAG | MAS |
+|---|---|---|
+| Contrast — normal text | 4.5:1 | 4.5:1 |
+| Contrast — large text | 3:1 | **4.5:1** |
+| Contrast — UI components | 3:1 | 3:1 |
+| Focus indicator | Any visible change | 3:1 against adjacent color |
+| Touch targets | Not specified | **44×44 px minimum** |
+| Screen reader | WCAG 4.1.2 | Windows Narrator + NVDA tested |
+
+## Critical rules
+
+<Callout type="warning">
+**Never assume the ADO org, repo URL, or test environment URL.** The a11y agent operates across multiple repos and environments. Any of the three that are not explicitly provided must be asked for — a wrong assumption creates an artifact in the wrong place.
+</Callout>
+
+1. **ADO org** — always ask before posting bug comments or updating work item state.
+2. **Repo URL / local path** — always ask before creating branches or committing.
+3. **Test environment URL** — always ask before running axe or Playwright; do not assume localhost is running.
+4. Never auto-create ADO bugs or open PRs without explicit user approval.
+5. Never skip post-fix verification — `--verify-fix` before marking any bug resolved.
+
+## Boundaries
+
+- Does not own the validate pipeline — `pwagent-validate --a11y` handles pre/post-fix axe deltas wired into the CI chain.
+- Does not triage S360 WCAG action items — `pwagent-s360` owns those.
+- Does not merge PRs — `pwagent-publish` does that.
+- Does not modify CI pipelines.
+
+## Source
+
+[`cli/src/content/agents/accessibility/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/accessibility/charter.md)

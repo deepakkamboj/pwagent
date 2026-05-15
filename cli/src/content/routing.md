@@ -26,6 +26,31 @@
 | Traceability | `record --kind matrix` | "import bugs into the matrix", "link bug AB#54321 to tests/foo.spec.ts", "query the matrix for bug X" |
 | Pattern learning | `record --kind patterns` | "extract patterns from this week's green fixes", "update FixPatterns" |
 | Reporting | report | "weekly digest", "compose the retro", "render flake-rank table" |
+| **S360 accessibility — scan** | `s360 --scan <alias\|guid>` | "scan S360 a11y items for bos", "what accessibility items does my team own", "list WCAG action items for service X" |
+| S360 accessibility — triage | `s360 --triage <alias\|guid>` | "triage S360 a11y backlog for bos", "which items are out of SLA", "prioritize accessibility action items" |
+| S360 accessibility — fix | `s360 --fix <uuid>` | "fix S360 action item ABC-123", "close the color-contrast item", "remediate this WCAG violation" |
+| S360 ETA update | `s360 --update-eta <uuid> --eta YYYY-MM-DD` | "update ETA for action item X", "mark item in-progress with new date" |
+| S360 accessibility — report | `s360 --report <alias>` | "S360 a11y report for bos", "accessibility compliance summary", "how many items are out of SLA" |
+| S360 raw list | `s360 --list <alias\|guid>` | "list all S360 a11y items for bos", "dump action items to CSV" |
+| **Accessibility — scan URL** | `a11y --scan <url>` | "scan this URL for WCAG violations", "run axe on https://...", "check accessibility of this page" |
+| Accessibility — scan repo | `a11y --scan-repo --base-url <url>` | "scan all routes in our dev server", "batch axe scan the whole app" |
+| Accessibility — review contrast | `a11y --review contrast --path <dir>` | "check color contrast", "find contrast violations in src/", "WCAG 1.4.3" |
+| Accessibility — review color | `a11y --review color --path <dir>` | "check color-only indicators", "error only shown in red", "WCAG 1.4.1" |
+| Accessibility — review links | `a11y --review links --path <dir>` | "find generic link text", "check link accessibility", "click here read more WCAG 2.4.4" |
+| Accessibility — review modes | `a11y --review modes --path <dir>` | "high contrast mode", "forced colors", "reduced motion", "MAS accessibility modes" |
+| Accessibility — review viewports | `a11y --review viewports --path <dir>` | "responsive accessibility", "touch targets", "check mobile breakpoints" |
+| Accessibility — review interactive | `a11y --review interactive --url <url>` | "tabs accessibility", "modal keyboard trap", "combobox ARIA", "test interactive elements" |
+| Accessibility — fix violations | `a11y --fix <file-or-dir>` | "fix accessibility violations", "add aria labels", "fix contrast in src/components" |
+| Accessibility — verify fix | `a11y --verify-fix <url> <rule> <bug>` | "verify the a11y fix", "confirm violation is resolved", "post axe result to ADO bug" |
+| Accessibility — test generation | `a11y --test-gen --component <file>` | "generate accessibility tests", "write axe-core playwright tests", "a11y test for modal" |
+| Accessibility — HTML report | `a11y --report --url <url>` | "generate accessibility report", "WCAG compliance report", "a11y audit report" |
+| **ADO a11y — list repos** | `ado-a11y list repos` | "list configured repos", "show open a11y bugs", "what repos are set up" |
+| ADO a11y — read bug | `ado-a11y get bug <id>` | "get bug 12345", "read ADO bug", "show details for work item" |
+| ADO a11y — create bug | `ado-a11y create bug <repo> "<title>"` | "create accessibility bug in CRM.Client.UnifiedClient", "log a11y issue in ADO" |
+| ADO a11y — fix bug | `ado-a11y fix bug <id>` | "fix ADO bug 12345", "automated fix for accessibility work item", "run fix loop on bug" |
+| ADO a11y — batch fix | `ado-a11y fix all "<area-path>"` | "fix all accessibility bugs in OneCRM\\Client\\Controls", "batch fix a11y bugs" |
+| ADO a11y — create PR | `ado-a11y create pr <id> "<title>" <repo>` | "open PR for bug 12345", "commit and create pull request for accessibility fix" |
+| ADO a11y — resolve bug | `ado-a11y resolve bug <id> <pr-url>` | "resolve bug 12345", "mark bug fixed after merge", "close the accessibility work item" |
 
 ## Reviewer gates
 

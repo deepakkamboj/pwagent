@@ -19,3 +19,6 @@
 | pwagent-auth | Auth-flow specialist (storage state, roles, MFA) | agents/auth/charter.md |
 | pwagent-record | Canonical-state writer (`--kind matrix\|patterns`) | agents/record/charter.md |
 | pwagent-report | Weekly + ad-hoc reporter | agents/report/charter.md |
+| pwagent-s360 | S360 accessibility specialist (scan / triage / fix / close S360 WCAG action items) | agents/s360/charter.md |
+| pwagent-a11y | Full-stack accessibility agent (WCAG scan, MAS review, auto-fix, verify, test-gen, HTML report, interactive testing) | agents/accessibility/charter.md |
+| pwagent-ado-a11y | ADO accessibility bug manager (list, read, create, fix, create PR, resolve — reads config.json for repo routing) | agents/ado-a11y/charter.md |

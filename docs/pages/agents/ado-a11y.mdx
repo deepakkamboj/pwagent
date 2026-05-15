@@ -1,0 +1,132 @@
+---
+title: ado-a11y
+---
+
+import { Callout } from 'nextra/components'
+
+# pwagent-ado-a11y
+
+**ADO accessibility bug manager.** Manages accessibility bugs across Azure DevOps repositories — listing, reading, creating, fixing, and resolving them. Reads all repo routing (org, project, area path, MCP server) from `~/.pwagent/config.json`. Never hardcodes or assumes ADO context.
+
+## Invocation
+
+**Chat (Squad shell):**
+
+```
+@pwagent-ado-a11y
+@pwagent-ado-a11y list repos
+@pwagent-ado-a11y get bug 12345
+@pwagent-ado-a11y fix bug 12345
+@pwagent-ado-a11y fix all "OneCRM\Client\Controls"
+```
+
+**CLI:**
+
+```powershell
+pwagent run ado-a11y
+pwagent run ado-a11y list repos
+pwagent run ado-a11y get-bug 12345
+pwagent run ado-a11y fix-bug 12345
+pwagent run ado-a11y fix-all "OneCRM\Client\Controls"
+pwagent run ado-a11y create-pr 12345 "Missing aria-label" CRM.Client.UnifiedClient
+pwagent run ado-a11y resolve-bug 12345 https://dynamicscrm.visualstudio.com/.../pullrequest/999
+```
+
+## Modes
+
+| Mode | Trigger | What happens |
+|------|---------|-------------|
+| `list repos` | "list repos", "show open bugs" | Table of configured repos with open a11y bug counts per repo |
+| `get bug <id>` | "get bug 12345", "read work item" | Full ADO work item — title, state, priority, repro steps, violation details, latest comments |
+| `create bug` | "create accessibility bug" | Creates ADO bug in the specified repo with area path, tags, and priority from config |
+| `fix bug <id>` | "fix bug 12345", "automated fix" | Full fix loop: eligibility → file location → fix → axe verify → PR → comment on bug |
+| `fix all "<area>"` | "fix all bugs in <area-path>" | Batch fix: WIQL query → user confirmation → sequential fix loop → consolidated report |
+| `create pr` | "open PR for bug 12345" | Commits local changes, pushes branch, opens PR linked to ADO bug |
+| `resolve bug` | "resolve bug 12345" | Sets bug to Resolved, posts comment, optionally updates S360 ETA |
+| `playwright login` | "log in to <url>" | Playwright SSO auth to Power Platform / D365 environment; saves `.auth/<slug>.json` |
+| `auth` | "run auth check", "preflight" | Checks gh auth, az login, az devops extension, all configured MCP servers |
+
+## Skills it draws on
+
+| Skill | When used |
+|-------|-----------|
+| `ado/auth` | Pre-flight check — called at session start or when auth issues are detected |
+| `ado/list-repos` | "list repos" / "show bug counts" |
+| `ado/get-bug` | "get bug \<id>" / bug lookup before fix |
+| `ado/create-bug` | "create bug" / called from S360 workflows |
+| `ado/create-pr` | After code is fixed and ready to push |
+| `ado/resolve-bug` | "resolve bug" / after PR is merged |
+| `ado/fix-bug` | Full automated single-bug fix loop |
+| `ado/fix-all` | Batch fix by area path |
+| `ado/playwright-login` | Pre-scan auth for Power Platform / D365 environments |
+| `a11y/MAS` | Microsoft Accessibility Standards reference (in fix loop) |
+| `a11y/narrator-patterns` | Narrator/UIA fix patterns (in fix loop) |
+
+## Config requirements
+
+All repo routing comes from `~/.pwagent/config.json`. Each repo entry needs:
+
+```jsonc
+{
+  "repos": [
+    {
+      "name": "CRM.Client.UnifiedClient",
+      "path": "E:/git/CRM.Client.UnifiedClient",
+      "type": "ado",
+      "defaultBranch": "main",
+      "remoteUrl": "https://dynamicscrm.visualstudio.com/OneCRM/_git/CRM.Client.UnifiedClient",
+      "ado": {
+        "org": "https://dynamicscrm.visualstudio.com",
+        "project": "OneCRM",
+        "areaPath": "OneCRM\\Client\\UnifiedClient",
+        "iteration": "OneCRM\\Current",
+        "bugTags": ["accessibility", "a11y", "unified-client"],
+        "mcpServer": "dynamicscrm-repo"
+      }
+    }
+  ]
+}
+```
+
+See [Configuration → repos](/configuration#repos--repository-registry) for the full field reference.
+
+## Transport
+
+Prefers `az` CLI when authenticated. Falls back automatically to the MCP server configured in `ado.mcpServer` per repo. Both must be available if you want to use batch operations across repos in different orgs.
+
+```powershell
+# Verify transport availability
+pwagent run ado-a11y auth
+pwagent doctor --mcps
+```
+
+## Traceability
+
+Every artifact created by this agent is tagged `[pwagent]`:
+
+| Artifact | Format |
+|----------|--------|
+| Bug title | `[pwagent][A11y] <title>` |
+| Commit message | `[pwagent] fix(a11y): <title>` |
+| PR title | `[pwagent][A11y] <title>` |
+| Bug comments | `_[pwagent]_` footer |
+| Branch name | `a11y/fix-<bug-id>` |
+
+<Callout type="warning">
+**Never auto-resolves bugs.** The fix loop (fix-bug / fix-all) leaves bugs in **Active** state after creating a PR. Resolution is always user-controlled via `resolve-bug`. This prevents premature closing before PRs are reviewed and merged.
+</Callout>
+
+<Callout type="error">
+**Multi-repo rule.** This agent works across multiple ADO orgs (dynamicscrm, msazure, others). It **never assumes** which org a bug belongs to or where a repo is cloned. If the git remote doesn't match a configured repo, it asks. If a local path is needed and not in config, it asks. If you need to tell it the URL of a test environment, tell it — it won't guess.
+</Callout>
+
+## Boundaries
+
+- **Does not overlap with `pwagent-s360`** — `pwagent-s360` owns the S360→ADO bug creation pipeline. `pwagent-ado-a11y` manages bugs that are already in ADO or need to be created from a direct user request.
+- **Does not overlap with `pwagent-a11y`** — `pwagent-a11y` runs WCAG scans and reviews code. `pwagent-ado-a11y` tracks and manages the ADO work items around those violations.
+- **Does not trigger pipelines** — handled by `pwagent-triage`.
+- **Does not modify ADO permissions, area paths, or iterations** — config changes are manual.
+
+## Source
+
+Charter: [`agents/ado-a11y/charter.md`](https://github.com/microsoft/pwagent/blob/main/cli/src/content/agents/ado-a11y/charter.md)

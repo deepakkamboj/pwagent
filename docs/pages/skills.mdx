@@ -7,7 +7,7 @@ import { BookOpen, Compass, Workflow, Terminal, Database, GitBranch, Accessibili
 
 # Skills
 
-pwagent ships **60+ skill guides** across **7 packs**. Each is a Markdown file with `name:` and `description:` frontmatter that the [coordinator](/architecture/coordinator) keyword-scores against the user's prompt to inject the most relevant ones at spawn time.
+pwagent ships **75+ skill guides** across **7 packs**. Each is a Markdown file with `name:` and `description:` frontmatter that the [coordinator](/architecture/coordinator) keyword-scores against the user's prompt to inject the most relevant ones at spawn time.
 
 ## The seven packs
 
@@ -19,7 +19,7 @@ pwagent ships **60+ skill guides** across **7 packs**. Each is a Markdown file w
 | `playwright-cli/` | 11 | flat-file | `npx playwright codegen`, traces, devices, debugging |
 | `kusto/` | 1 | Squad-shape (`SKILL.md`) | Kusto queries for flake history, run stats, regression hunting |
 | `ado/` | 1 | Squad-shape | ADO work items, pull requests via REST (not `az pr create`), pipeline runs |
-| `a11y/` | 1 | Squad-shape | Accessibility — axe-core integration, WCAG verification, fix patterns |
+| `a11y/` | 16 | Squad-shape | Accessibility — scan, contrast/color/links/modes/viewports/interactive review, fix, verify, test-gen, HTML report, MAS + Narrator knowledge |
 
 ## Two file shapes
 
@@ -97,7 +97,7 @@ Resolution follows the standard four-step [override chain](/architecture/overrid
   <Card icon={<BookOpen />} title="pom/" href="/agents/generate">generate — POM scaffolding</Card>
   <Card icon={<Database />} title="kusto/" href="/agents/triage">triage — flake history</Card>
   <Card icon={<Compass />} title="ado/" href="/agents/heal">heal, triage — ADO bugs, PRs</Card>
-  <Card icon={<Accessibility />} title="a11y/" href="/agents/generate">generate, heal — accessibility tests</Card>
+  <Card icon={<Accessibility />} title="a11y/" href="/agents/a11y">pwagent-a11y — scan, review, fix, test-gen, report</Card>
 </Cards>
 
 ## Why we publish skill packs separately from agents

@@ -9,14 +9,27 @@
       "heal":     { "model": "claude-opus-4.5" },
       "triage":   { "model": "claude-opus-4.5" },
       "report":   { "model": "claude-haiku-4.5" },
-      "validate": { "model": "claude-haiku-4.5" }
+      "validate": { "model": "claude-haiku-4.5" },
+      "s360":     { "model": "claude-sonnet-4-6" }
     }
   },
 
   "ado": {
     "org": "https://dev.azure.com/<your-org>",
     "project": "<your-project>",
-    "defaultRepo": "<your-repo>"
+    "defaultRepo": "<your-repo>",
+
+    "_comment_defaults": "defaults applied to every accessibility bug created by pwagent-a11y and pwagent-s360, unless overridden per-repo",
+    "defaults": {
+      "bugType": "Bug",
+      "bugSeverity": "2 - High",
+      "baseTags": ["accessibility", "a11y", "automated"],
+      "priorityBySlaState": {
+        "OutOfSla":       "1 - Critical",
+        "ApproachingSla": "2 - High",
+        "InSla":          "3 - Medium"
+      }
+    }
   },
 
   "identity": {
@@ -41,15 +54,87 @@
       "database": "9e3b07ee31d44eb9aba317884f5e8ad4",
       "displayName": "PowerApps-Engineering",
       "_comment": "Aria cluster for PowerApps test telemetry. Tables: testrun (one row per run), testresult (one row per individual test outcome). Discover schema with `cluster('kusto.aria.microsoft.com').database('9e3b07ee31d44eb9aba317884f5e8ad4').testrun | getschema`."
+    },
+    "s360": {
+      "url": "https://s360prodro.kusto.windows.net",
+      "database": "service360db",
+      "_comment": "Service 360 Kusto cluster. Used by `pwagent run s360 --scan|--triage|--fix|--report`. Tables: GetActiveActionItems(), KpiMetadata(), GetAliasToOwnedServiceHierarchyMapping(), PeopleHierarchySnapshot_datalake, GetResolvedActionItems()."
     }
   },
 
+  "s360": {
+    "adoOrg": "https://dev.azure.com/<your-org>",
+    "adoProject": "<your-project>",
+    "adoAreaPath": "<your-area-path>",
+    "adoIteration": "<your-iteration-path>",
+    "defaultAssignee": "<alias>@microsoft.com",
+    "repoUrl": "https://github.com/<org>/<repo>",
+    "serviceTreeIds": [],
+    "_comment": "serviceTreeIds: optional array of ServiceTree GUIDs to restrict --scan/--triage to specific services. Leave empty to query the full alias hierarchy. adoAreaPath example: 'MyOrg\\MyTeam\\Accessibility'. adoIteration example: 'MyOrg\\Sprint 42'."
+  },
+
+  "_comment_repos": "One entry per repository. remoteUrl enables auto-detection of org/project from `git remote get-url origin`. ado fields override the top-level ado.org/project for repos that live in a different org (e.g. msazure vs dynamicscrm). productAreas supports monorepos where different subdirs map to different ADO area paths.",
   "repos": [
     {
-      "name": "<your-repo>",
-      "path": "D:/code/<your-repo>",
+      "name": "CRM.Client.UnifiedClient",
+      "path": "E:/git/CRM.Client.UnifiedClient",
       "type": "ado",
-      "defaultBranch": "main"
+      "defaultBranch": "main",
+      "remoteUrl": "https://dynamicscrm.visualstudio.com/OneCRM/_git/CRM.Client.UnifiedClient",
+      "ado": {
+        "org": "https://dynamicscrm.visualstudio.com",
+        "project": "OneCRM",
+        "areaPath": "OneCRM\\Client\\UnifiedClient",
+        "iteration": "OneCRM\\Current",
+        "bugTags": ["accessibility", "a11y", "unified-client"],
+        "defaultAssignee": "",
+        "serviceTreeId": "",
+        "mcpServer": "dynamicscrm-repo"
+      }
+    },
+    {
+      "name": "CRM.Client.controls",
+      "path": "E:/git/CRM.Client.controls",
+      "type": "ado",
+      "defaultBranch": "main",
+      "remoteUrl": "https://dynamicscrm.visualstudio.com/OneCRM/_git/CRM.Client.controls",
+      "ado": {
+        "org": "https://dynamicscrm.visualstudio.com",
+        "project": "OneCRM",
+        "areaPath": "OneCRM\\Client\\Controls",
+        "iteration": "OneCRM\\Current",
+        "bugTags": ["accessibility", "a11y", "crm-controls"],
+        "defaultAssignee": "",
+        "serviceTreeId": "",
+        "mcpServer": "dynamicscrm-repo"
+      }
+    },
+    {
+      "name": "power-platform-ux",
+      "path": "E:/git/power-platform-ux",
+      "type": "ado",
+      "defaultBranch": "main",
+      "remoteUrl": "https://msazure.visualstudio.com/OneAgile/_git/power-platform-ux",
+      "ado": {
+        "org": "https://msazure.visualstudio.com",
+        "project": "OneAgile",
+        "areaPath": "OneAgile\\Power Platform UX",
+        "iteration": "OneAgile\\Current",
+        "bugTags": ["accessibility", "a11y", "ppux"],
+        "defaultAssignee": "",
+        "serviceTreeId": "",
+        "mcpServer": "msazure-repo",
+        "_comment_productAreas": "sub-directory → area path mapping for monorepo bug routing",
+        "productAreas": [
+          { "path": "apps/make-powerapps-com",        "areaPath": "OneAgile\\Power Platform UX\\Maker Portal",        "bugTags": ["accessibility", "a11y", "ppux", "maker-portal"] },
+          { "path": "packages/one-cds-designer",      "areaPath": "OneAgile\\Power Platform UX\\Modern Data Explorer","bugTags": ["accessibility", "a11y", "ppux", "cds-designer"] },
+          { "path": "packages/cds-event-utilities",   "areaPath": "OneAgile\\Power Platform UX\\Modern Data Explorer","bugTags": ["accessibility", "a11y", "ppux", "cds-event-utilities"] },
+          { "path": "packages/powerapps-modern-portal","areaPath": "OneAgile\\Power Platform UX\\Maker Portal",       "bugTags": ["accessibility", "a11y", "ppux", "modern-portal"] },
+          { "path": "packages/powerapps-ui-common",   "areaPath": "OneAgile\\Power Platform UX\\Maker Portal",       "bugTags": ["accessibility", "a11y", "ppux", "ui-common"] },
+          { "path": "packages/powerapps-learn",       "areaPath": "OneAgile\\Power Platform UX\\Maker Portal",       "bugTags": ["accessibility", "a11y", "ppux", "powerapps-learn"] },
+          { "path": "packages/powerapps-wizards",     "areaPath": "OneAgile\\Power Platform UX\\Maker Portal",       "bugTags": ["accessibility", "a11y", "ppux", "powerapps-wizards"] }
+        ]
+      }
     }
   ],
 

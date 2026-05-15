@@ -4,11 +4,11 @@ title: Agents
 
 import { Cards, Card } from '../../components/Cards';
 import { AgentTable } from '../../components/AgentTable';
-import { Compass, Stethoscope, Wrench, Pen, Map, Search, FileText, CheckCircle2, KeyRound, ClipboardCheck } from 'lucide-react';
+import { Compass, Stethoscope, Wrench, Pen, Map, Search, FileText, CheckCircle2, KeyRound, ClipboardCheck, Accessibility, Bug } from 'lucide-react';
 
 # Agents
 
-pwagent ships **10 specialist agents**. Each is a Markdown charter — identity, responsibilities, boundaries, tools, model — that lives in `cli/src/content/agents/<name>/charter.md` and resolves through the [override chain](/architecture/override-chain).
+pwagent ships **12 specialist agents**. Each is a Markdown charter — identity, responsibilities, boundaries, tools, model — that lives in `cli/src/content/agents/<name>/charter.md` and resolves through the [override chain](/architecture/override-chain).
 
 ## The roster
 
@@ -24,6 +24,8 @@ pwagent ships **10 specialist agents**. Each is a Markdown charter — identity,
     { name: 'validate', role: 'Run a test twice via npx playwright test', inputs: '.spec.ts path', outputs: 'pass twice / pass once / fail twice', model: 'claude-haiku-4-5' },
     { name: 'auth', role: 'Auth-flow specialist', inputs: 'storage state / role config', outputs: 'storage state JSON or .ts setup', model: 'claude-sonnet-4.5' },
     { name: 'review', role: 'HITL gate', inputs: 'unstamped verdict', outputs: 'stamp event in audit log', model: 'claude-haiku-4-5' },
+    { name: 'a11y', role: 'Accessibility specialist', inputs: 'URL / file / dir', outputs: 'violations report / patched files / test file / HTML report', model: 'claude-opus-4-7' },
+    { name: 'ado-a11y', role: 'ADO accessibility bug manager', inputs: 'bug ID / repo name / area path', outputs: 'work items created/updated, PRs opened, S360 ETA set', model: 'claude-sonnet-4-6' },
   ]}
 />
 
@@ -108,4 +110,5 @@ These are declared in `routing.md` under `## Gates`. The coordinator enforces th
   <Card icon={<CheckCircle2 />} title="Validate" href="/agents/validate">Run a test twice</Card>
   <Card icon={<KeyRound />} title="Auth" href="/agents/auth">Auth-flow specialist</Card>
   <Card icon={<ClipboardCheck />} title="Review" href="/agents/review">HITL gate</Card>
+  <Card icon={<Accessibility />} title="a11y" href="/agents/a11y">Accessibility specialist</Card>
 </Cards>

@@ -8,7 +8,7 @@ This is the **practical** guide. For architecture and reference material, see [d
 
 - [Mental model in 60 seconds](#mental-model-in-60-seconds)
 - [Invocation patterns](#invocation-patterns)
-- [The 13 agents — what to type at each one](#the-13-agents--what-to-type-at-each-one)
+- [The 16 agents — what to type at each one](#the-16-agents--what-to-type-at-each-one)
 - [Skill packs — when each is auto-injected](#skill-packs--when-each-is-auto-injected)
 - [End-to-end workflows](#end-to-end-workflows)
 - [Task playbooks](#task-playbooks)
@@ -24,7 +24,7 @@ This is the **practical** guide. For architecture and reference material, see [d
 
 ## Mental model in 60 seconds
 
-- **`pwagent` opens the Squad chat shell** — an Ink TUI with PWAGENT banner, categorised agent roster, `@agent` routing, `/` slash-command suggestion box, and streaming responses. Squad (`@bradygaster/squad-cli`) provides the UI; we pass our 13 agents via `.squad/`.
+- **`pwagent` opens the Squad chat shell** — an Ink TUI with PWAGENT banner, categorised agent roster, `@agent` routing, `/` slash-command suggestion box, and streaming responses. Squad (`@bradygaster/squad-cli`) provides the UI; we pass our 15 agents via `.squad/`.
 - On first run in a workspace, pwagent scaffolds a **`.pwagent/`** directory (canonical content) from its embedded charters, then mirrors it to **`.squad/`** (Squad CLI reads that path). User edits go in `.pwagent/`; `.squad/` is regenerated on every launch.
 - For **CI / scheduled runs**, the headless form `pwagent run <agent>` is still available. It uses pwagent's own coordinator + SDK — no Squad dependency on CI runners.
 - Each agent is a Markdown **charter** with stable sections (Identity, Responsibilities, Boundaries, Tools, Model). Read one with `pwagent agents show <name>` from a shell, or use `/agents` inside the chat shell.
@@ -97,7 +97,7 @@ pwagent run analyze --cwd D:/code/my-tests --scenarios --path src/checkout
 
 ---
 
-## The 13 agents — what to type at each one
+## The 16 agents — what to type at each one
 
 Each section shows two invocation styles:
 - **`›`** — typed inside the Squad chat shell (`pwagent` with no args)
@@ -398,6 +398,130 @@ $ pwagent run report --kind triage --window 7d
 $ pwagent run report --kind scenario-coverage
 $ pwagent run report "give me a table of every triage verdict for fix-related runs last week, with confidence"
 ```
+
+---
+
+### s360 — S360 accessibility specialist
+
+Scans, triages, fixes, and closes WCAG action items tracked in Microsoft Service 360. Requires Kusto MCP, S360 MCP, and ADO MCP configured in your environment.
+
+```
+› @pwagent-s360 --scan bos
+› @pwagent-s360 --scan bos --out-of-sla-only
+› @pwagent-s360 --triage bos
+› @pwagent-s360 --fix 3fa85f64-5717-4562-b3fc-2c963f66afa6
+› @pwagent-s360 --fix 3fa85f64-5717-4562-b3fc-2c963f66afa6 --devloop-url https://localhost:3000/checkout
+› @pwagent-s360 --update-eta 3fa85f64-5717-4562-b3fc-2c963f66afa6 --eta 2026-06-01 --status "In progress — fix PR pending"
+› @pwagent-s360 --report bos
+› @pwagent-s360 --report bos --window 30d
+› @pwagent-s360 --list bos --out-of-sla-only
+```
+
+```bash
+$ pwagent run s360 --scan bos
+$ pwagent run s360 --scan bos --out-of-sla-only
+$ pwagent run s360 --triage bos
+$ pwagent run s360 --fix 3fa85f64-5717-4562-b3fc-2c963f66afa6
+$ pwagent run s360 --fix 3fa85f64-5717-4562-b3fc-2c963f66afa6 --devloop-url https://localhost:3000/checkout
+$ pwagent run s360 --update-eta 3fa85f64-5717-4562-b3fc-2c963f66afa6 --eta 2026-06-01 --status "In progress"
+$ pwagent run s360 --report bos --window 30d
+$ pwagent run s360 --list bos --format csv
+```
+
+**Output per mode:**
+- `--scan` / `--list`: Markdown table of action items with S360 portal links.
+- `--triage`: Three-tier backlog (❌ Act Now / ⚠️ This Sprint / ✅ Backlog) with complexity estimates.
+- `--fix`: Step-by-step progress → ADO bug #, branch, PR URL, confidence score, S360 ETA updated.
+- `--update-eta`: One-line confirmation.
+- `--report`: Executive summary with totals, SLA trend, top overdue items.
+
+**Prerequisites:** `.pwagent/s360.config.md` with `adoOrg`, `adoProject`, `adoAreaPath`. See [agents/s360/charter.md](cli/src/content/agents/s360/charter.md).
+
+---
+
+### a11y — full-stack accessibility specialist
+
+Scans URLs and repos for WCAG violations, reviews code for contrast/color/links/modes/viewports/interactive elements, auto-fixes violations, verifies fixes against ADO bugs, generates Playwright accessibility tests, and produces self-contained HTML compliance reports. Applies Microsoft Accessibility Standards (MAS) where stricter than WCAG 2.1 AA.
+
+```
+› @pwagent-a11y --scan https://localhost:3000/checkout
+› @pwagent-a11y --review contrast --path src/components
+› @pwagent-a11y --review color --path src/
+› @pwagent-a11y --review links --path src/
+› @pwagent-a11y --review modes --path src/
+› @pwagent-a11y --review viewports --path src/
+› @pwagent-a11y --review interactive --url http://localhost:3000
+› @pwagent-a11y --fix src/components/LoginForm.tsx
+› @pwagent-a11y --verify-fix http://localhost:3000/login color-contrast AB#54321
+› @pwagent-a11y --test-gen --component src/components/Modal.tsx
+› @pwagent-a11y --report --url http://localhost:3000
+```
+
+```bash
+$ pwagent run a11y --scan http://localhost:3000/checkout
+$ pwagent run a11y --scan-repo --base-url http://localhost:3000
+$ pwagent run a11y --review contrast --path src/components
+$ pwagent run a11y --review color --path src/
+$ pwagent run a11y --review links --path src/
+$ pwagent run a11y --review modes --path src/
+$ pwagent run a11y --review viewports --path src/
+$ pwagent run a11y --review interactive --url http://localhost:3000
+$ pwagent run a11y --fix src/components/LoginForm.tsx
+$ pwagent run a11y --verify-fix http://localhost:3000/login color-contrast AB#54321
+$ pwagent run a11y --test-gen --component src/components/Modal.tsx
+$ pwagent run a11y --test-gen --page /checkout --out tests/accessibility/
+$ pwagent run a11y --report --url http://localhost:3000
+$ pwagent run a11y --report --url http://localhost:3000 --theme hc-black --out report.html
+```
+
+**Output per mode:**
+- `--scan`: Terminal violation report grouped by impact (critical → serious → moderate → minor) with axe rule IDs and fix guidance.
+- `--scan-repo`: Consolidated multi-route report.
+- `--review *`: File-by-file violation list with before/after code and WCAG/MAS references.
+- `--fix`: Patched files with confidence scores (High/Medium/Low); Low-confidence changes flagged for human review.
+- `--verify-fix`: Before/after comparison + ADO bug comment; bug set to Resolved if passed.
+- `--test-gen`: `tests/accessibility/<component>.spec.ts` with axe-core + keyboard + ARIA tests.
+- `--report`: Self-contained HTML file with 8 themes, filterable violation cards, ADO bug templates, and AI fix prompts.
+
+**Prerequisites:** `npx axe` (axe-cli) and `npx playwright` available in the project. No extra config files required.
+
+---
+
+### ado-a11y — ADO accessibility bug manager
+
+Manages accessibility bugs across Azure DevOps repositories. Lists repos and open bug counts, reads bug details, creates new bugs, runs a full automated fix loop (eligibility → fix → axe verify → PR → comment), and resolves bugs after merge. Optionally updates S360 action item ETAs. Reads all repo routing (org, project, area path, MCP server) from `~/.pwagent/config.json` — never hardcodes.
+
+```
+› list repos
+› show open a11y bugs in CRM.Client.UnifiedClient
+› get bug 12345
+› create accessibility bug in power-platform-ux for "Missing aria-label on Save button"
+› fix bug 12345
+› fix all bugs in "OneCRM\Client\Controls"
+› open PR for bug 12345
+› resolve bug 12345 with PR https://dynamicscrm.visualstudio.com/...
+```
+
+```bash
+$ pwagent run ado-a11y list repos
+$ pwagent run ado-a11y get-bug 12345
+$ pwagent run ado-a11y create-bug CRM.Client.UnifiedClient "Missing aria-label on Save button"
+$ pwagent run ado-a11y fix-bug 12345
+$ pwagent run ado-a11y fix-all "OneCRM\Client\Controls"
+$ pwagent run ado-a11y create-pr 12345 "Missing aria-label" CRM.Client.UnifiedClient
+$ pwagent run ado-a11y resolve-bug 12345 https://dynamicscrm.visualstudio.com/.../pullrequest/999
+```
+
+**Output per mode:**
+- `list repos`: Table of configured repos with open accessibility bug counts.
+- `get bug <id>`: Full work item — title, state, priority, area path, repro steps, violation details, latest comments.
+- `create bug`: ADO bug ID with link to the new work item.
+- `fix bug <id>`: 8-step fix report — eligibility → file location → fix applied → axe verification → PR link → confidence score.
+- `fix all "<area>"`: Batch fix report — per-bug confidence, PR link, and consolidated summary table.
+- `create pr`: PR link, branch, and comment posted on the bug.
+- `resolve bug`: Bug set to Resolved with optional S360 ETA update.
+
+**Prerequisites:** `~/.pwagent/config.json` with `repos` array. ADO MCP (`dynamicscrm-repo` or `msazure-repo`) configured in `~/.claude/claude_desktop_config.json`. `az` CLI authenticated or MCP fallback available. Run `pwagent run ado-a11y auth` for pre-flight check.
 
 ---
 

@@ -10,4 +10,6 @@ export default {
   validate: 'Validate',
   auth: 'Auth',
   review: 'Review',
+  a11y: 'a11y',
+  'ado-a11y': 'ado-a11y',
 };

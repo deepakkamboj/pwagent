@@ -32,10 +32,61 @@ The user config lives at `~/.pwagent/config.json`. It's validated by [zod](https
   },
 
   "ado": {
-    "organization": "contoso",
-    "project": "Engineering",
-    "defaultRepository": "playwright-tests"
+    "org": "https://dynamicscrm.visualstudio.com",
+    "project": "OneCRM",
+    "defaultRepo": "CRM.Client.UnifiedClient",
+
+    "defaults": {
+      "bugType": "Bug",
+      "bugSeverity": "2 - High",
+      "baseTags": ["accessibility", "a11y", "automated"],
+      "priorityBySlaState": {
+        "OutOfSla":       "1 - Critical",
+        "ApproachingSla": "2 - High",
+        "InSla":          "3 - Medium"
+      }
+    }
   },
+
+  "repos": [
+    {
+      "name": "CRM.Client.UnifiedClient",
+      "path": "E:/git/CRM.Client.UnifiedClient",
+      "type": "ado",
+      "defaultBranch": "main",
+      "remoteUrl": "https://dynamicscrm.visualstudio.com/OneCRM/_git/CRM.Client.UnifiedClient",
+      "ado": {
+        "org": "https://dynamicscrm.visualstudio.com",
+        "project": "OneCRM",
+        "areaPath": "OneCRM\\Client\\UnifiedClient",
+        "iteration": "OneCRM\\Current",
+        "bugTags": ["accessibility", "a11y", "unified-client"],
+        "defaultAssignee": "",
+        "serviceTreeId": "",
+        "mcpServer": "dynamicscrm-repo"
+      }
+    },
+    {
+      "name": "power-platform-ux",
+      "path": "E:/git/power-platform-ux",
+      "type": "ado",
+      "defaultBranch": "main",
+      "remoteUrl": "https://msazure.visualstudio.com/OneAgile/_git/power-platform-ux",
+      "ado": {
+        "org": "https://msazure.visualstudio.com",
+        "project": "OneAgile",
+        "areaPath": "OneAgile\\Power Platform UX",
+        "iteration": "OneAgile\\Current",
+        "bugTags": ["accessibility", "a11y", "ppux"],
+        "defaultAssignee": "",
+        "serviceTreeId": "",
+        "mcpServer": "msazure-repo",
+        "productAreas": [
+          { "path": "apps/make-powerapps-com", "areaPath": "OneAgile\\Power Platform UX\\Maker Portal", "bugTags": ["accessibility", "a11y", "ppux", "maker-portal"] }
+        ]
+      }
+    }
+  ],
 
   "github": {
     "defaultRepository": "microsoft/playwright-tests"
@@ -79,6 +130,42 @@ The user config lives at `~/.pwagent/config.json`. It's validated by [zod](https
   }
 }
 ```
+
+## repos — repository registry
+
+The `repos` array replaces the old per-skill `repos.config.md` pattern. Every repo that agents may create bugs in, open PRs against, or run axe scans for should have an entry here.
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | ✓ | Repo name — matched against `git remote get-url origin` for auto-detection |
+| `path` | ✓ | Local clone path |
+| `type` | ✓ | `"ado"` or `"github"` |
+| `defaultBranch` | ✓ | Branch PRs target (usually `"main"`) |
+| `remoteUrl` | | Full ADO/GitHub remote URL — enables auto-detect when agents infer context from `git remote` |
+| `ado.org` | | ADO org URL — overrides global `ado.org` for repos in a different org |
+| `ado.project` | | ADO project — overrides global `ado.project` |
+| `ado.areaPath` | | Area path for bug creation (e.g. `OneCRM\Client\UnifiedClient`) |
+| `ado.iteration` | | Iteration path (e.g. `OneCRM\Current`) |
+| `ado.bugTags` | | Default tags applied to every accessibility bug created in this repo |
+| `ado.defaultAssignee` | | Default `assignedTo` value (alias or email) |
+| `ado.serviceTreeId` | | ServiceTree GUID — passed to S360 for action item linking |
+| `ado.mcpServer` | | MCP server ID to use (`"dynamicscrm-repo"` or `"msazure-repo"`) |
+| `ado.productAreas` | | Monorepo sub-directory → area path mappings (see `power-platform-ux` example) |
+
+**Auto-detection** — when an agent shells out `git remote get-url origin`, pwagent matches the returned URL against `repos[*].remoteUrl`. If a match is found, the agent uses that entry's `ado.*` fields without asking. If no match is found, the agent asks which repo to use — it never guesses.
+
+## ado.defaults — accessibility bug defaults
+
+Applied to every bug created by `pwagent-a11y` and `pwagent-s360`, unless a per-repo `ado.bugTags` / per-call override is present.
+
+| Field | Description |
+|---|---|
+| `bugType` | Work item type — always `"Bug"` |
+| `bugSeverity` | Default severity (`"2 - High"`) |
+| `baseTags` | Tags added to every bug (`["accessibility", "a11y", "automated"]`) |
+| `priorityBySlaState.OutOfSla` | Priority for S360 out-of-SLA items — `"1 - Critical"` |
+| `priorityBySlaState.ApproachingSla` | `"2 - High"` |
+| `priorityBySlaState.InSla` | `"3 - Medium"` |
 
 ## Editing
 

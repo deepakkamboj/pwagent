@@ -25,7 +25,32 @@ The root [`package.json`](https://github.com/microsoft/pwagent/blob/main/package
 - Wires up symlinks so `@pwagent/cli` resolves `@pwagent/portal` and vice versa
 - Runs each workspace's `postinstall` step in dependency order
 
-## 3. Build the CLI + portal + docs
+## 3. Satisfy prerequisites — mandatory
+
+Before building, verify all required CLIs and MCP servers are in place. This is a **mandatory onboarding step** — agents will silently fail if these are missing.
+
+```powershell
+pwagent prereqs                       # report (no installs)
+pwagent prereqs --install --yes       # install missing CLI tools
+```
+
+Then configure your MCP servers in `~/.claude/claude_desktop_config.json`. The minimum set:
+
+- **Kusto MCP** — required by `pwagent-s360`, `pwagent-analyze`, `pwagent-triage`
+- **S360 MCP** — required by `pwagent-s360`
+- **ADO MCP** (either `dynamicscrm-repo` or `msazure-repo`) — required by `pwagent-s360`, `pwagent-a11y`, `pwagent-publish`
+
+Full instructions and example config snippets: [Prerequisites → MCP servers](/getting-started/prerequisites#mcp-servers)
+
+After adding MCPs, verify everything is green:
+
+```powershell
+pwagent doctor          # CLIs + MCPs in one pass
+```
+
+You should see `Ready.` before proceeding.
+
+## 4. Build the CLI + portal + docs
 
 ```powershell
 npm run build
@@ -47,7 +72,7 @@ npm run build:portal    # Portal only — ~25 seconds
 npm run build:docs      # Docs only — ~20 seconds
 ```
 
-## 4. Link the CLI globally
+## 5. Link the CLI globally
 
 So `pwagent` is callable from any directory:
 
@@ -62,7 +87,7 @@ Verify the link points at your local checkout:
 where.exe pwagent       # e.g. C:\Users\<you>\AppData\Roaming\npm\pwagent.cmd
 ```
 
-## 5. Bootstrap user state
+## 6. Bootstrap user state
 
 ```powershell
 copy pwagent.config.example.json "$env:USERPROFILE\.pwagent\config.json"
@@ -71,7 +96,7 @@ mkdir "$env:USERPROFILE\.pwagent\logs"
 mkdir "$env:USERPROFILE\.pwagent\audit"
 ```
 
-`pwagent init` does steps 5–7 interactively if you'd rather not run them by hand.
+`pwagent init` does steps 6–8 interactively if you'd rather not run them by hand.
 
 ## Verifying
 

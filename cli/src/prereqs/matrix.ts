@@ -127,11 +127,21 @@ export const PREREQS: Prereq[] = [
   {
     id: "axe",
     label: "@axe-core/cli",
-    reason: "Accessibility scans — the a11y skill drives axe to verify before/after a fix",
+    reason: "Live-URL WCAG scanning. pwagent-a11y --scan, --scan-repo, --verify-fix and pwagent-validate --a11y all shell out to `npx axe`.",
     tier: "required",
     detect: { kind: "cmd", cmd: "npx", args: ["axe", "--version"], versionPattern: /(\d+\.\d+\.\d+)/ },
     installers: [{ kind: "npm-global", pkg: "@axe-core/cli" }],
-    unlocks: ["a11y verify"],
+    unlocks: ["a11y scan", "a11y verify-fix", "validate --a11y"],
+  },
+  {
+    id: "axe-playwright",
+    label: "@axe-core/playwright",
+    reason: "Playwright-integrated axe scans. pwagent-a11y --test-gen and --review interactive generate AxeBuilder tests. Add as a devDependency in each test project: `npm i -D @axe-core/playwright`.",
+    tier: "recommended",
+    // Detect inside the current workspace — exits 0 if resolvable, non-zero if absent.
+    detect: { kind: "cmd", cmd: "node", args: ["-e", "require.resolve('@axe-core/playwright')"] },
+    installers: [{ kind: "npm-global", pkg: "@axe-core/playwright" }],
+    unlocks: ["a11y test-gen", "a11y review-interactive"],
   },
   {
     id: "kusto",
