@@ -4,89 +4,233 @@ title: Scheduler
 
 # Scheduler
 
-The scheduler is an **in-process tick loop** inside the same `pwagent` binary. Same logs, same config, same process. There is no separate daemon.
+The scheduler is powered by **`@bradygaster/squad-scheduler`**, a standalone package from the [deepakkamboj/squad](https://github.com/deepakkamboj/squad) fork (`packages/squad-scheduler`). Jobs are declared in a single `squad.schedule.json` file at your project root — no per-job files, no separate daemon process.
 
-## Job spec
+## Quick start
 
-```jsonc
+**1. Create `squad.schedule.json` in your project root:**
+
+```json
 {
-  "id": "pwagent-monitor",
-  "description": "Long-poll ADO + GH Actions for new failures",
-  "enabled": true,
-  "schedule": { "type": "interval", "minutes": 5 },
-  "command": "pwagent monitor --once",
-  "maxRunSeconds": 600,
-  "retry": { "onExitCodes": [1, 124], "maxAttempts": 2, "backoffSeconds": 30 },
-  "disableAfterConsecutiveFailures": 5,
-  "logs":   { "path": "~/.pwagent/logs/scheduler/monitor.log" },
-  "events": { "path": "~/.pwagent/logs/scheduler/pwagent-monitor.jsonl" }
+  "jobs": [
+    {
+      "id": "daily-triage",
+      "name": "Daily Triage",
+      "cron": "0 8 * * 1-5",
+      "agent": "triage",
+      "enabled": false
+    }
+  ]
 }
 ```
 
-Job files live in `~/.pwagent/scheduler/*.json`. **Hot-reloaded** on file change — no scheduler restart needed.
-
-## Schedule types
-
-| `type` | Fields | Example |
-|---|---|---|
-| `interval` | `minutes`, `seconds`, `hours` | `{ "type": "interval", "minutes": 5 }` |
-| `daily` | `at` (HH:MM, 24h, local time) | `{ "type": "daily", "at": "02:00" }` |
-| `weekly` | `day` (Mon–Sun), `at` | `{ "type": "weekly", "day": "Fri", "at": "17:00" }` |
-| `cron` | `expr` | `{ "type": "cron", "expr": "*/5 9-17 * * 1-5" }` |
-
-## Seed jobs
-
-All ship `enabled: false` by default. Enable each one explicitly.
-
-| Job id | Schedule | Purpose |
-|---|---|---|
-| `pwagent-monitor` | `interval: 5m` | Pull new failures from ADO + GH Actions; route to triage |
-| `pwagent-coverage-nightly` | `daily: 02:00` | Scan `src/` + `tests/` for scenario gaps |
-| `pwagent-report-weekly` | `weekly: Fri 17:00` | Generate weekly Markdown + HTML report |
-| `pwagent-learner-nightly` | `daily: 03:00` | Extract fix patterns from green runs |
-
-Enable one:
+**2. Start the scheduler:**
 
 ```powershell
-pwagent job enable pwagent-monitor
+pwagent scheduler start
 ```
+
+The scheduler reads `squad.schedule.json`, registers all enabled jobs, and begins its 5-second tick loop. To use a different config file, set the `SQUAD_SCHEDULE_FILE` environment variable to the desired path.
+
+---
+
+## Job spec reference
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | string | yes | — | Kebab-case identifier. Used for state tracking, locks, and log file names. |
+| `name` | string | yes | — | Human-readable label shown in `list` and `status` output. |
+| `cron` | string | yes | — | Standard 5-field cron expression (`minute hour dom month dow`). |
+| `agent` | string | no | — | Squad agent name. Runs `squad @<agent> <args>`. Mutually exclusive with `command`. |
+| `args` | string | no | — | Extra arguments appended after the agent name when using `agent`. |
+| `command` | string | no | — | Shell command to execute. Mutually exclusive with `agent`. |
+| `enabled` | boolean | no | `true` | Set to `false` to skip the job without removing it. |
+| `description` | string | no | — | Shown in `pwagent scheduler list` output. |
+| `maxRunSeconds` | number | no | `600` | Job is killed and marked `job_timeout` if it exceeds this duration. |
+| `retryOnFailure` | boolean | no | `false` | Retry the job on non-zero exit. |
+| `maxRetries` | number | no | `2` | Maximum retry attempts (when `retryOnFailure` is `true`). |
+| `retryBackoffSeconds` | number | no | `30` | Seconds to wait between retry attempts. |
+| `disableAfterFailures` | number | no | `5` | Consecutive failures before the job is automatically disabled. |
+| `runOnStartup` | boolean | no | `false` | Fire the job once immediately when the scheduler starts, before the first tick. |
+
+---
+
+## Schedule expressions
+
+Jobs use standard **5-field cron expressions**: `minute hour dom month dow`
+
+| Field | Range | Special characters |
+|---|---|---|
+| minute | 0–59 | `, - * /` |
+| hour | 0–23 | `, - * /` |
+| day of month | 1–31 | `, - * /` |
+| month | 1–12 | `, - * /` |
+| day of week | 0–7 (0 and 7 = Sunday) | `, - * /` |
+
+**Examples:**
+
+| Expression | Meaning |
+|---|---|
+| `0 8 * * 1-5` | 08:00 every weekday |
+| `*/30 9-17 * * 1-5` | Every 30 minutes during business hours, weekdays |
+| `0 * * * *` | Top of every hour |
+| `0 2 * * *` | 02:00 every day |
+| `0 17 * * 5` | 17:00 every Friday |
+| `0 0 1 * *` | Midnight on the 1st of every month |
+
+---
+
+## Dispatch modes
+
+Each job dispatches via exactly one of two modes: **agent** or **command**.
+
+### Agent mode
+
+Runs a Squad agent using `squad @<agent> <args>`. Use this for any job that should invoke an AI agent.
+
+```json
+{
+  "id": "daily-triage",
+  "name": "Daily Triage",
+  "cron": "0 8 * * 1-5",
+  "agent": "triage",
+  "args": "--project MyProject --max-items 20"
+}
+```
+
+Resolves to: `squad @triage --project MyProject --max-items 20`
+
+### Command mode
+
+Runs an arbitrary shell command. Use this for scripts, CLI tools, or non-agent automation.
+
+```json
+{
+  "id": "hourly-flake-check",
+  "name": "Hourly Flake Check",
+  "cron": "0 * * * *",
+  "command": "node scripts/check-flaky-tests.js --threshold 0.05"
+}
+```
+
+`agent` and `command` are mutually exclusive — specifying both is a validation error.
+
+---
+
+## Sample squad.schedule.json
+
+A complete configuration file with three jobs (all disabled by default):
+
+```json
+{
+  "jobs": [
+    {
+      "id": "daily-triage",
+      "name": "Daily Triage",
+      "description": "Triage new ADO failures every weekday morning",
+      "cron": "0 8 * * 1-5",
+      "agent": "triage",
+      "args": "--max-items 30",
+      "enabled": false,
+      "maxRunSeconds": 900,
+      "retryOnFailure": true,
+      "maxRetries": 2,
+      "retryBackoffSeconds": 60
+    },
+    {
+      "id": "hourly-flake-check",
+      "name": "Hourly Flake Check",
+      "description": "Scan recent test runs for flaky tests and open ADO items",
+      "cron": "0 * * * *",
+      "command": "node scripts/check-flaky-tests.js",
+      "enabled": false,
+      "maxRunSeconds": 300,
+      "disableAfterFailures": 3
+    },
+    {
+      "id": "weekly-report",
+      "name": "Weekly Report",
+      "description": "Generate and send the weekly quality report every Friday at 17:00",
+      "cron": "0 17 * * 5",
+      "agent": "reporter",
+      "args": "--format html --send-email",
+      "enabled": false,
+      "runOnStartup": false,
+      "maxRunSeconds": 600
+    }
+  ]
+}
+```
+
+---
+
+## CLI commands
+
+| Command | Description |
+|---|---|
+| `pwagent scheduler start` | Start the scheduler in the foreground. Reads `squad.schedule.json` and begins the tick loop. |
+| `pwagent scheduler stop` | Signal the running scheduler to shut down gracefully. |
+| `pwagent scheduler list` | List all jobs with their id, name, cron expression, enabled state, and last-run status. |
+| `pwagent scheduler status <id>` | Show detailed status for a single job: last run time, exit code, next scheduled run, retry count. |
+| `pwagent scheduler logs <id>` | Stream the JSONL event log for a job. Defaults to the last 50 events. |
+
+---
+
+## Lifecycle events
+
+Each job writes append-only JSONL to `~/.pwagent/scheduler/events/<id>.jsonl`. The scheduler itself writes to `~/.pwagent/scheduler/events/scheduler.jsonl`.
+
+**Example job run (success):**
+
+```jsonc
+{ "ts": "2026-05-14T08:00:00Z", "type": "job_start",  "job": "daily-triage", "attempt": 1 }
+{ "ts": "2026-05-14T08:01:43Z", "type": "job_end",    "job": "daily-triage", "exitCode": 0, "durationMs": 103200 }
+```
+
+**Example job run (failure with retry then auto-disable):**
+
+```jsonc
+{ "ts": "2026-05-14T08:00:00Z", "type": "job_start",        "job": "daily-triage", "attempt": 1 }
+{ "ts": "2026-05-14T08:00:12Z", "type": "job_error",        "job": "daily-triage", "exitCode": 1, "stderr": "connection refused" }
+{ "ts": "2026-05-14T08:00:42Z", "type": "job_retry",        "job": "daily-triage", "attempt": 2, "backoffSeconds": 30 }
+{ "ts": "2026-05-14T08:01:10Z", "type": "job_error",        "job": "daily-triage", "exitCode": 1, "stderr": "connection refused" }
+{ "ts": "2026-05-14T08:01:10Z", "type": "job_auto_disabled","job": "daily-triage", "reason": "consecutive failures: 5" }
+```
+
+**Event types:**
+
+| Type | Emitted when |
+|---|---|
+| `scheduler_start` | Scheduler process starts. |
+| `scheduler_stop` | Scheduler process shuts down. |
+| `job_start` | A job begins execution. Includes `attempt` number. |
+| `job_end` | A job completes successfully. Includes `exitCode` and `durationMs`. |
+| `job_error` | A job exits with a non-zero code. Includes `exitCode` and `stderr`. |
+| `job_timeout` | A job is killed after exceeding `maxRunSeconds`. |
+| `job_retry` | A job is queued for retry. Includes `attempt` and `backoffSeconds`. |
+| `job_auto_disabled` | A job is disabled after exceeding `disableAfterFailures`. |
+
+---
 
 ## Tick loop guarantees
 
-- **Per-job locks** — `<id>.lock` file prevents overlapping runs of the same job
-- **Per-process lock** — `~/.pwagent/scheduler/.lock` prevents two scheduler instances
-- **Atomic state writes** — `state.json.tmp` + rename
-- **JSONL event stream** — one file per job (`<id>.jsonl`), append-only
-- **Hot-reload** — `fs.watch` on `~/.pwagent/scheduler/`; new specs picked up next tick
-- **Retry with backoff** — `retry.onExitCodes` matches, sleeps `backoffSeconds`, re-runs
-- **Auto-disable** — after `disableAfterConsecutiveFailures` failures, sets `enabled: false` in the spec
+- **5-second tick** — the scheduler wakes every 5 seconds and evaluates which jobs are due.
+- **Per-job locks** — a lock prevents the same job from running concurrently with itself across ticks.
+- **Atomic state writes** — `state.json` is written via a temp-file rename; no partial reads.
+- **JSONL event stream** — one append-only file per job at `~/.pwagent/scheduler/events/<id>.jsonl`.
+- **Hot-reload** — `fs.watch` monitors `squad.schedule.json` with a 300 ms debounce; changes are applied on the next tick without restarting the scheduler.
+- **Retry with backoff** — when `retryOnFailure` is true, failed jobs are retried up to `maxRetries` times, waiting `retryBackoffSeconds` between attempts.
+- **Auto-disable** — after `disableAfterFailures` consecutive failures, the job's `enabled` state is set to `false` in memory (the source `squad.schedule.json` is not modified).
 
-## Lifecycle events (JSONL)
-
-Every run emits:
-
-```jsonc
-{ "ts": "2026-05-13T12:00:00Z", "type": "agent_start",  "job": "pwagent-monitor", "attempt": 1 }
-{ "ts": "2026-05-13T12:00:02Z", "type": "agent_log",    "job": "pwagent-monitor", "line": "found 3 new failures" }
-{ "ts": "2026-05-13T12:00:18Z", "type": "agent_end",    "job": "pwagent-monitor", "exitCode": 0, "durationMs": 18412 }
-```
-
-On failure:
-
-```jsonc
-{ "ts": "...", "type": "agent_error", "job": "pwagent-monitor", "exitCode": 1, "stderr": "..." }
-{ "ts": "...", "type": "agent_disabled", "job": "pwagent-monitor", "reason": "consecutive failures: 5" }
-```
-
-The portal's `/jobs/<id>` page tails this file via SSE.
+---
 
 ## Platform service installer
 
-```bash
+To run the scheduler automatically on login and across reboots:
+
+```powershell
 pwagent service install
 ```
-
-Registers the scheduler with the OS service manager so it survives reboots:
 
 | Platform | Mechanism |
 |---|---|
@@ -94,30 +238,21 @@ Registers the scheduler with the OS service manager so it survives reboots:
 | macOS | launchd plist (`launchctl load`) |
 | Linux | systemd `--user` unit (`systemctl --user enable --now`) |
 
-```bash
-pwagent service status            # is it installed and running?
-pwagent service uninstall         # remove the registration
-```
-
-The service runs `pwagent scheduler start` — same code path as foreground.
-
-## Adding a custom job
-
-Drop a spec into `~/.pwagent/scheduler/<your-id>.json` and it picks up on the next tick (within ~1 s). Or use the CLI:
-
 ```powershell
-pwagent job add ./my-job.json
-pwagent job enable my-job
-pwagent job logs my-job -n 20
+pwagent service status      # check whether the service is installed and running
+pwagent service uninstall   # remove the OS-level registration
 ```
 
-Or use the portal at `/jobs` → "New job" form, which validates the spec via zod before writing.
+The service runs `pwagent scheduler start` — the same code path as running it in the foreground.
 
-## Dry-run
+---
 
-```powershell
-pwagent scheduler dry-run pwagent-monitor                # simulate next tick, no execution
-pwagent scheduler dry-run pwagent-monitor --execute      # execute the command immediately
-```
+## Portal integration
 
-Useful for testing schedule expressions and retry behaviour without waiting for the real tick.
+The pwagent portal reads the same state files that the CLI writes:
+
+- **`/scheduler`** — shows overall scheduler status, uptime, last tick time, and a summary of all jobs.
+- **`/jobs`** — lists all jobs from `squad.schedule.json` with live status pulled from `~/.pwagent/scheduler/state.json`.
+- **`/jobs/<id>`** — tails `~/.pwagent/scheduler/events/<id>.jsonl` via SSE for a live event stream.
+
+No separate API server is required — the portal reads state files directly.

@@ -538,98 +538,106 @@ The portal is **independent** of the CLI. Kill the portal and the CLI + schedule
 
 ## Scheduler recipes
 
-The scheduler reads `~/.pwagent/config.json` → `schedules[]`. Add a job either by editing the file, using `pwagent job add <path>`, or the portal's **"+ New job"** form.
+Jobs live in `squad.schedule.json` at the project root and are picked up automatically by `@bradygaster/squad-scheduler`. Each job uses a standard 5-field cron expression (`minute hour dom month dow`).
 
-### Recipe 1 — Long-poll ADO every 5 minutes (was: monitor)
+### Recipe 1 — Triage new failures every 5 min during business hours
 
-```jsonc
+```json
 {
-  "name": "ado-poll",
-  "kind": "interval",
-  "interval": 5,
+  "id": "triage-poll",
+  "name": "Triage Poll",
+  "description": "Poll for new failures and auto-dispatch triage during business hours.",
+  "cron": "*/5 9-17 * * 1-5",
+  "agent": "discover",
+  "args": "--watch --once",
   "enabled": true,
-  "command": ["pwagent", "run", "discover", "--watch", "--poll-seconds", "300"],
-  "description": "Poll ADO + GitHub Actions for new failures; auto-dispatch triage."
+  "maxRunSeconds": 300,
+  "retryOnFailure": false
 }
 ```
 
-> Or run `pwagent run discover --watch` directly — it's a daemon itself.
-
 ### Recipe 2 — Nightly coverage sweep at 02:00
 
-```jsonc
+```json
 {
-  "name": "nightly-coverage",
-  "kind": "daily",
-  "time": "02:00",
+  "id": "nightly-coverage",
+  "name": "Nightly Coverage Sweep",
+  "description": "Find scenario gaps every night.",
+  "cron": "0 2 * * *",
+  "agent": "analyze",
+  "args": "--scenarios --path src",
   "enabled": true,
-  "command": "pwagent run analyze --scenarios --path src",
-  "description": "Find scenario gaps every night."
+  "maxRunSeconds": 1800,
+  "retryOnFailure": true,
+  "maxRetries": 2,
+  "retryBackoffSeconds": 60
 }
 ```
 
 ### Recipe 3 — Nightly flake rank at 03:00
 
-```jsonc
+```json
 {
-  "name": "nightly-flake-rank",
-  "kind": "daily",
-  "time": "03:00",
+  "id": "nightly-flake-rank",
+  "name": "Nightly Flake Rank",
+  "description": "Rank flaky tests via Kusto over the last 14 days.",
+  "cron": "0 3 * * *",
+  "agent": "analyze",
+  "args": "--flakes --pipeline 23878 --top 20 --window 14d --format json",
   "enabled": true,
-  "command": "pwagent run analyze --flakes --pipeline 23878 --top 20 --window 14d --format json",
-  "description": "Rank flaky tests via Kusto over the last 14 days."
+  "maxRunSeconds": 1800,
+  "retryOnFailure": true,
+  "maxRetries": 2,
+  "retryBackoffSeconds": 60
 }
 ```
 
 ### Recipe 4 — Weekly report Fridays 17:00
 
-```jsonc
+```json
 {
-  "name": "weekly-report",
-  "kind": "weekly",
-  "weekday": "Friday",
-  "time": "17:00",
+  "id": "weekly-report",
+  "name": "Weekly Report",
+  "description": "Weekly Markdown + HTML report.",
+  "cron": "0 17 * * 5",
+  "agent": "report",
+  "args": "--window 7d",
   "enabled": true,
-  "command": "pwagent run report --window 7d",
-  "description": "Weekly Markdown + HTML report."
+  "maxRunSeconds": 900,
+  "retryOnFailure": true,
+  "maxRetries": 1,
+  "retryBackoffSeconds": 120
 }
 ```
 
-### Recipe 5 — Auto-fix red CI during business hours
+### Recipe 5 — Auto-fix red CI every 15 min on weekdays
 
-```jsonc
+```json
 {
-  "name": "business-hours-fix",
-  "kind": "cron",
+  "id": "business-hours-fix",
+  "name": "Business Hours Fix",
+  "description": "Every 15 min on weekdays 9-17, fix up to 5 failures from the pipeline.",
   "cron": "*/15 9-17 * * 1-5",
+  "agent": "fix",
+  "args": "--orchestrate --ado-pipeline 23878 --max-failures 5 --auto-stamp",
   "enabled": true,
-  "command": "pwagent run fix --orchestrate --ado-pipeline 23878 --max-failures 5 --auto-stamp",
-  "description": "Every 15 min on weekdays 9-17, fix up to 5 failures from the pipeline."
+  "maxRunSeconds": 900,
+  "retryOnFailure": true,
+  "maxRetries": 2,
+  "retryBackoffSeconds": 60
 }
 ```
 
-### Recipe 6 — Keep the supervisor alive forever
-
-```jsonc
-{
-  "name": "live-supervisor",
-  "kind": "startup",
-  "enabled": true,
-  "command": "pwagent ralph go",
-  "description": "Keep the supervisor active for the whole scheduler lifetime."
-}
-```
+For shell commands use `"command"` instead of `"agent"`, e.g. `"command": "node scripts/report.mjs"`.
 
 Manage them:
 
 ```bash
-pwagent scheduler start            # foreground tick loop
-pwagent scheduler start --daemon   # detached
-pwagent scheduler list             # all jobs + state
-pwagent scheduler dry-run <id>     # simulate next tick
-pwagent scheduler dry-run <id> --execute   # fire now
-pwagent job enable <id> | disable <id>
-pwagent job logs <id> -n 50
+pwagent scheduler start          # foreground (reads squad.schedule.json in cwd)
+pwagent scheduler stop           # signal running scheduler to stop
+pwagent scheduler list           # all jobs + next fire time
+pwagent scheduler status [id]    # detail + recent events
+pwagent scheduler logs <id>      # tail event log
 ```
 
 Or use the portal at `/scheduler` and `/jobs`.

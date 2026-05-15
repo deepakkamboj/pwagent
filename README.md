@@ -7,7 +7,7 @@
   ╚═╝       ╚══╝╚══╝  ╚═╝  ╚═╝  ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
 
   Multi-agent Playwright testing — Squad design, GitHub Copilot SDK runtime.
-  cli (engine) · portal (dashboard) · scheduler (in-process)
+  cli (engine) · portal (dashboard) · scheduler (@bradygaster/squad-scheduler)
 
 ─────────────────────────────────────────────────────────────────
 ```
@@ -84,10 +84,9 @@ The monorepo (root [`package.json`](package.json)) ships three independent packa
 
 | Package | Path | What it is |
 |---|---|---|
-| **`@pwagent/cli`** | `cli/` | The standalone CLI binary, agent runtime, scheduler |
+| **`@pwagent/cli`** | `cli/` | The standalone CLI binary and agent runtime |
 | **`@pwagent/portal`** | `portal/` | Local Next.js dashboard (port 7337) — Tailwind + shadcn/ui |
 | **`@pwagent/docs`** | `docs/` | End-to-end professional documentation (port 7338) — Nextra + Next.js |
-| **scheduler** (in-process) | `cli/src/scheduler/` | Tick loop, locks, JSONL events, hot-reload |
 
 Removing any layer leaves the others working — **three independent layers** plus a static docs site.
 
@@ -142,7 +141,7 @@ All three resolve the docs URL **dynamically** from `window.location.hostname:73
 
 ## Design rationale
 
-"Make `pwagent` work like `playwright`." Install it once with `npm i -g @pwagent/cli`. It carries its own agent runtime, its own scheduler, its own model client. It does **not** depend on `gh copilot`, does **not** require VS Code, does **not** install a Copilot plugin. If a workspace has a `.pwagent/` (or `.squad/`) directory, `pwagent` picks up the charters and skills there as overrides — otherwise it uses the ones baked into the binary. The same binary runs interactively, runs unattended via its built-in scheduler, and (optionally) backs a 30-line VS Code chat wrapper.
+"Make `pwagent` work like `playwright`." Install it once with `npm i -g @pwagent/cli`. It carries its own agent runtime, its own scheduler, its own model client. It does **not** depend on `gh copilot`, does **not** require VS Code, does **not** install a Copilot plugin. If a workspace has a `.pwagent/` (or `.squad/`) directory, `pwagent` picks up the charters and skills there as overrides — otherwise it uses the ones baked into the binary. The same binary runs interactively, runs unattended via the scheduler, and (optionally) backs a 30-line VS Code chat wrapper.
 
 The team flagged complexity twice during design. This shape cuts to:
 
@@ -862,41 +861,72 @@ PWAGENT_PORTAL_PORT=9999 pwagent portal start
 
 ## Scheduler
 
-In-process, hot-reload, same binary. Job spec format:
+Powered by the standalone [`@bradygaster/squad-scheduler`](https://github.com/deepakkamboj/squad/tree/main/packages/squad-scheduler) package. Jobs are declared in `squad.schedule.json` at the project root (not in `~/.pwagent/`).
+
+### Job spec format
 
 ```jsonc
+// squad.schedule.json
 {
-  "id": "pwagent-monitor",
-  "description": "Long-poll ADO + GH Actions for new failures",
-  "enabled": true,
-  "schedule": { "type": "interval", "minutes": 5 },
-  "command": "pwagent monitor --once",
-  "maxRunSeconds": 600,
-  "retry": { "onExitCodes": [1, 124], "maxAttempts": 2, "backoffSeconds": 30 },
-  "disableAfterConsecutiveFailures": 5,
-  "logs":   { "path": "~/.pwagent/logs/scheduler/monitor.log" },
-  "events": { "path": "~/.pwagent/logs/scheduler/pwagent-monitor.jsonl" }
+  "jobs": [
+    {
+      "id": "daily-triage",
+      "name": "Daily triage",
+      "description": "Run the triage agent on weekday mornings",
+      "cron": "0 9 * * 1-5",
+      "agent": "triage",
+      "args": "--pipeline 23878",
+      "enabled": true,
+      "maxRunSeconds": 300,
+      "retryOnFailure": true,
+      "maxRetries": 2,
+      "retryBackoffSeconds": 30,
+      "disableAfterFailures": 5,
+      "runOnStartup": false
+    },
+    {
+      "id": "weekly-report",
+      "name": "Weekly report",
+      "description": "Generate weekly Markdown + HTML report",
+      "cron": "0 17 * * 5",
+      "command": "node scripts/report.mjs",
+      "enabled": true,
+      "maxRunSeconds": 600
+    }
+  ]
 }
 ```
 
-Job files live in `~/.pwagent/scheduler/*.json`. Hot-reloaded on file change.
+- **`agent`** jobs run `squad @<agent> <args>` (e.g. `agent: "triage"` → `squad @triage --pipeline 23878`).
+- **`command`** jobs run an arbitrary shell command.
+- **`cron`** uses standard 5-field syntax: `minute hour dom month dow`.
 
-### Seed jobs (all `enabled: false` by default)
+### Sample jobs
 
-| Job id | Schedule | Purpose |
+| Job id | Cron | Purpose |
 |---|---|---|
-| `pwagent-monitor` | `interval: 5m` | Pull new failures from ADO + GH Actions; route to triage |
-| `pwagent-coverage-nightly` | `daily: 02:00` | Scan src/ + tests/ for scenario gaps |
-| `pwagent-report-weekly` | `weekly: Fri 17:00` | Generate weekly Markdown + HTML report |
-| `pwagent-learner-nightly` | `daily: 03:00` | Extract fix patterns from green runs |
+| `daily-triage` | `0 9 * * 1-5` | Run triage agent on weekday mornings |
+| `hourly-flake-check` | `0 * * * *` | Scan for newly flaky tests every hour |
+| `weekly-report` | `0 17 * * 5` | Generate weekly Markdown + HTML report |
 
 ### Tick loop guarantees
 
-- Per-job + per-process locks (`<id>.lock`).
-- Atomic `state.json` writes.
-- JSONL event stream (one file per job).
-- Hot-reload via `fs.watch`.
-- Retry with backoff; auto-disable on `disableAfterConsecutiveFailures`.
+- 5-second tick interval.
+- Per-job locks prevent overlapping runs.
+- Atomic `~/.pwagent/scheduler/state.json` writes.
+- JSONL event stream at `~/.pwagent/scheduler/events/<id>.jsonl` — event types: `job_start`, `job_end`, `job_error`, `job_timeout`, `job_retry`, `job_auto_disabled`, `scheduler_start`, `scheduler_stop`.
+- Hot-reloads `squad.schedule.json` on file change.
+- Retry with configurable backoff; auto-disable after `disableAfterFailures` consecutive failures.
+
+### Commands
+
+```
+pwagent scheduler start          # start the scheduler daemon
+pwagent scheduler stop           # stop the scheduler daemon
+pwagent scheduler list           # list all jobs and their next-run times
+pwagent scheduler status [id]    # show overall status or details for one job
+pwagent scheduler logs <id>      # tail the JSONL event log for a job
+```
 
 ### Platform service installer
 
@@ -932,7 +962,6 @@ pwagent/                          ← root: npm workspaces wrapper, private
 │   │   ├── charters/loader.ts    ← frontmatter parsing, override chain
 │   │   ├── skills/loader.ts      ← pack/name + Squad <name>/SKILL.md shape
 │   │   ├── prereqs/              ← matrix, detection, install flow
-│   │   ├── scheduler/            ← spec, state, lock, events, dispatcher, loop, jobLoader
 │   │   ├── runtime/              ← provider (Copilot SDK), coordinator, tools, routingTable
 │   │   ├── audit/                ← JSONL writer + reader
 │   │   ├── content/              ← embedded into the binary
@@ -1098,29 +1127,30 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Loop as pwagent scheduler<br/>(in-process)
+    participant Loop as pwagent scheduler<br/>(@bradygaster/squad-scheduler)
     participant Store as state.json
     participant Lock as <id>.lock
-    participant Disp as Dispatcher
-    participant CLI as pwagent (same binary)
+    participant Disp as squad-scheduler runner
+    participant CLI as squad / shell command
     participant Events as <id>.jsonl
 
-    loop every 1s
+    loop every 5s
         Loop->>Store: which jobs are due?
         alt one or more due
-            Loop->>Lock: acquire <pwagent-monitor>.lock
-            Loop->>Events: agent_start
-            Loop->>Disp: spawn pwagent monitor --once
+            Loop->>Lock: acquire <job-id>.lock
+            Loop->>Events: job_start
+            Loop->>Disp: spawn squad @agent / command
             Disp->>CLI: child_process.spawn
             CLI-->>Disp: exit code + stdout
             alt success
-                Disp->>Events: agent_end (ok)
+                Disp->>Events: job_end (ok)
                 Loop->>Store: update lastRunAt + nextDueAt
             else failure
-                Disp->>Events: agent_error
+                Disp->>Events: job_error
                 Loop->>Store: ++consecutiveFailures
-                alt failures >= disableAfter
+                alt failures >= disableAfterFailures
                     Loop->>Store: set enabled=false
+                    Loop->>Events: job_auto_disabled
                 end
             end
             Loop->>Lock: release
