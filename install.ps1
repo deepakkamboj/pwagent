@@ -94,22 +94,11 @@ if ($nodeResult -eq "ok") {
     $major   = [int]($nodeVer.Split('.')[0])
     if ($major -lt 22) {
         Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
-        Write-Host "  Upgrading via winget..." -ForegroundColor Gray
-        try {
-            winget upgrade --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements 2>$null
-            Refresh-Path
-            $newVer   = (node --version 2>$null) -replace '^v', ''
-            $newMajor = [int]($newVer.Split('.')[0])
-            if ($newMajor -ge 22) {
-                Write-Ok "Node.js upgraded to v$newVer"
-            } else {
-                Write-Warn "Node.js upgraded but not yet on PATH"
-                $script:needsRestart = $true
-            }
-        } catch {
-            Write-Warn "Upgrade failed. Run manually: winget upgrade OpenJS.NodeJS.LTS"
-            $script:needsRestart = $true
-        }
+        Write-Host "  Launching Node.js upgrade in a new window (please wait for it to finish)..." -ForegroundColor Gray
+        # Run in a separate elevated process — the Node.js MSI installer can kill
+        # the current session if run inline. This keeps THIS terminal alive.
+        Start-Process cmd -ArgumentList "/c winget upgrade --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements && echo. && echo Node.js upgraded successfully. You can close this window. && pause" -Verb RunAs -Wait
+        $script:needsRestart = $true
     }
 }
 
