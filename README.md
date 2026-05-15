@@ -332,7 +332,7 @@ flowchart TB
     end
 
     subgraph ChatChain ["Chat — pwagent (no args, TTY)"]
-        SquadCLI[@bradygaster/squad-cli<br/>Ink TUI]
+        SquadCLI["@bradygaster/squad-cli<br/>Ink TUI"]
         CopilotCLI[Squad shell<br/>banner · @ routing · suggestion box · streaming]
     end
 
