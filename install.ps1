@@ -4,17 +4,11 @@
 # This script:
 #   1. Checks/installs prerequisites (Node.js 22+, git, GitHub CLI)
 #   2. Authenticates GitHub CLI
-#   3. Clones / updates pwagent
-#   4. Installs dependencies, builds, and links the 'pwagent' command globally
-
-param(
-    [ValidateSet("stable", "dev")]
-    [string]$Channel = "stable"
-)
+#   3. npm install -g github:deepakkamboj/pwagent-cli#main
+#   4. Copies default config files to ~/.pwagent/
 
 $ErrorActionPreference = "Stop"
 $script:needsRestart = $false
-$branch = if ($Channel -eq "dev") { "dev" } else { "main" }
 
 function Write-Step($n, $total, $msg) { Write-Host "`n-- Step $n/$total : $msg --" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
@@ -28,6 +22,40 @@ function Refresh-Path {
 
 function Test-Command($cmd) {
     try { & $cmd --version 2>$null | Out-Null; return $true } catch { return $false }
+}
+
+function Install-Node22 {
+    Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
+    try {
+        $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+        $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
+        if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
+
+        $arch    = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+        $msiUrl  = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
+        $msiPath = Join-Path $env:TEMP "nodejs22.msi"
+
+        Write-Host "  Downloading Node.js $($node22.version) ($arch)..." -ForegroundColor Gray
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+
+        Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
+        Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart ADDLOCAL=ALL" -Verb RunAs -Wait
+        Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+        Refresh-Path
+
+        if (Test-Command "node") {
+            $ver = (node --version 2>$null) -replace '^v', ''
+            Write-Ok "Node.js $($node22.version) installed -- v$ver"
+            return "ok"
+        } else {
+            Write-Warn "Node.js installed but not yet on PATH -- restart required"
+            return "restart"
+        }
+    } catch {
+        Write-Warn "Auto-install failed: $($_.Exception.Message)"
+        Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
+        return "failed"
+    }
 }
 
 function Install-Prereq($name, $wingetId, $required) {
@@ -75,7 +103,6 @@ function Install-Prereq($name, $wingetId, $required) {
 Write-Host ""
 Write-Host "  pwagent -- Installer" -ForegroundColor Magenta
 Write-Host "  ====================" -ForegroundColor Magenta
-Write-Host "  Channel: $Channel (branch: $branch)" -ForegroundColor Magenta
 Write-Host ""
 
 try {
@@ -83,41 +110,7 @@ try {
 # ── Step 1: Prerequisites ─────────────────────────────────────────────────────
 Write-Step 1 4 "Prerequisites"
 
-# Node.js 22+ (required) -- always install via MSI from nodejs.org to get the right version
-function Install-Node22 {
-    Write-Host "  Fetching latest Node.js 22 LTS version info..." -ForegroundColor Gray
-    try {
-        $nodeIndex = Invoke-RestMethod "https://nodejs.org/dist/index.json"
-        $node22    = $nodeIndex | Where-Object { $_.lts -and $_.version -like 'v22.*' } | Select-Object -First 1
-        if (-not $node22) { throw "Could not find Node.js 22 LTS in release index." }
-
-        $arch    = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
-        $msiUrl  = "https://nodejs.org/dist/$($node22.version)/node-$($node22.version)-$arch.msi"
-        $msiPath = Join-Path $env:TEMP "nodejs22.msi"
-
-        Write-Host "  Downloading Node.js $($node22.version) ($arch)..." -ForegroundColor Gray
-        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
-
-        Write-Host "  Installing Node.js $($node22.version) (a UAC prompt may appear)..." -ForegroundColor Gray
-        Start-Process msiexec -ArgumentList "/i `"$msiPath`" /quiet /norestart ADDLOCAL=ALL" -Verb RunAs -Wait
-        Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
-        Refresh-Path
-
-        if (Test-Command "node") {
-            $ver = (node --version 2>$null) -replace '^v', ''
-            Write-Ok "Node.js $($node22.version) installed -- v$ver"
-            return "ok"
-        } else {
-            Write-Warn "Node.js installed but not yet on PATH -- restart required"
-            return "restart"
-        }
-    } catch {
-        Write-Warn "Auto-install failed: $($_.Exception.Message)"
-        Write-Host "  Install Node.js 22 manually: https://nodejs.org/en/download" -ForegroundColor Gray
-        return "failed"
-    }
-}
-
+# Node.js 22+ (required) -- install via MSI from nodejs.org
 $nodePresent = Test-Command "node"
 if ($nodePresent) {
     $nodeVer = (node --version 2>$null) -replace '^v', ''
@@ -126,17 +119,17 @@ if ($nodePresent) {
         Write-Ok "node -- v$nodeVer"
     } else {
         Write-Warn "Node.js v$nodeVer is too old -- pwagent requires Node.js 22+"
-        $nodeInstallResult = Install-Node22
-        if ($nodeInstallResult -eq "restart") { $script:needsRestart = $true }
-        if ($nodeInstallResult -eq "failed")  { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
+        $r = Install-Node22
+        if ($r -eq "restart") { $script:needsRestart = $true }
+        if ($r -eq "failed")  { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
     }
 } else {
     Write-Warn "node not found (Required)"
     $answer = Read-Host "  Install Node.js 22 LTS? [Y/n]"
     if ($answer -and $answer -notmatch "^[Yy]") { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
-    $nodeInstallResult = Install-Node22
-    if ($nodeInstallResult -eq "restart") { $script:needsRestart = $true }
-    if ($nodeInstallResult -eq "failed")  { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
+    $r = Install-Node22
+    if ($r -eq "restart") { $script:needsRestart = $true }
+    if ($r -eq "failed")  { throw "Node.js 22 is required. Install from https://nodejs.org/en/download" }
 }
 
 # git (required)
@@ -183,50 +176,17 @@ if ($authOk) {
     Write-Ok "GitHub CLI authenticated"
 }
 
-# ── Step 3: Clone / update pwagent ────────────────────────────────────────────
-Write-Step 3 4 "Clone pwagent"
+# ── Step 3: Install pwagent globally ──────────────────────────────────────────
+Write-Step 3 4 "Install pwagent"
 
-$installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
-New-Item -ItemType Directory -Force -Path (Split-Path $installDir) | Out-Null
-
-if (Test-Path (Join-Path $installDir ".git")) {
-    Write-Host "  Updating existing clone..." -ForegroundColor Gray
-    Push-Location $installDir
-    git checkout $branch 2>$null
-    git pull --ff-only
-    Pop-Location
-    Write-Ok "pwagent updated ($installDir)"
-} else {
-    Write-Host "  Cloning pwagent..." -ForegroundColor Gray
-    git clone --branch $branch https://github.com/deepakkamboj/pwagent.git $installDir
-    Write-Ok "pwagent cloned to $installDir"
-}
-
-# Copy config files to ~/.pwagent/ (skip if already customised)
-$globalDir = Join-Path $env:USERPROFILE ".pwagent"
-New-Item -ItemType Directory -Force -Path $globalDir | Out-Null
-foreach ($file in @("squad.brand.json", "squad.schedule.json", "pwagent.config.example.json")) {
-    $src  = Join-Path $installDir $file
-    $dest = Join-Path $globalDir $file
-    if ((Test-Path $src) -and -not (Test-Path $dest)) {
-        Copy-Item $src $dest
-        Write-Ok "Copied $file -> $globalDir"
-    }
-}
-
-# ── Step 4: Install, Build, Link ──────────────────────────────────────────────
-Write-Step 4 4 "Install, Build, and Link"
-
-Push-Location $installDir
-
-Write-Host "  Running npm install (fetches squad packages from GitHub fork)..." -ForegroundColor Gray
+Write-Host "  Running: npm install -g github:deepakkamboj/pwagent-cli#main" -ForegroundColor Gray
+Write-Host "  (downloads pwagent + squad packages -- no build required)..." -ForegroundColor Gray
 $ErrorActionPreference = "Continue"
-npm install
+npm install -g github:deepakkamboj/pwagent-cli#main
 $npmExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
 if ($npmExit -ne 0) {
-    $npmLog = (npm config get cache 2>$null)
-    $logDir = if ($npmLog) { Join-Path $npmLog "_logs" } else { $null }
+    $logDir = Join-Path (npm config get cache 2>$null) "_logs"
     if ($logDir -and (Test-Path $logDir)) {
         $latest = Get-ChildItem $logDir -Filter "*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($latest) {
@@ -237,33 +197,34 @@ if ($npmExit -ne 0) {
     }
     throw "npm install failed."
 }
-Write-Ok "Dependencies installed"
+Write-Ok "'pwagent' command installed globally"
 
-Write-Host "  Building..." -ForegroundColor Gray
-$ErrorActionPreference = "Continue"
-npm run build --workspace cli
-$buildExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
-if ($buildExit -ne 0) { throw "Build failed." }
-Write-Ok "Build complete"
+# ── Step 4: Default config files ──────────────────────────────────────────────
+Write-Step 4 4 "Config files"
 
-Write-Host "  Linking 'pwagent' command globally..." -ForegroundColor Gray
-$ErrorActionPreference = "Continue"
-npm link --workspace cli
-$linkExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
-if ($linkExit -ne 0) { throw "npm link failed. Try running as Administrator." }
-Write-Ok "'pwagent' command linked globally"
+$globalDir  = Join-Path $env:USERPROFILE ".pwagent"
+$rawBase    = "https://raw.githubusercontent.com/deepakkamboj/pwagent/main"
+New-Item -ItemType Directory -Force -Path $globalDir | Out-Null
 
-Pop-Location
+foreach ($file in @("squad.brand.json", "squad.schedule.json", "pwagent.config.example.json")) {
+    $dest = Join-Path $globalDir $file
+    if (-not (Test-Path $dest)) {
+        try {
+            Invoke-WebRequest -Uri "$rawBase/$file" -OutFile $dest -UseBasicParsing
+            Write-Ok "Copied $file -> $globalDir"
+        } catch {
+            Write-Warn "Could not fetch $file -- $($_.Exception.Message)"
+        }
+    } else {
+        Write-Ok "$file already present (skipped)"
+    }
+}
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  +------------------------------------------+" -ForegroundColor Green
 Write-Host "  |  pwagent installed successfully!         |" -ForegroundColor Green
 Write-Host "  +------------------------------------------+" -ForegroundColor Green
-Write-Host ""
-Write-Host "  Installed to: $installDir" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Get started:" -ForegroundColor White
 Write-Host "    pwagent prereqs --install   # install gh, az, axe-core, etc." -ForegroundColor Gray

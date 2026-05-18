@@ -15,72 +15,32 @@ Write-Host ""
 
 try {
 
-$installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
+# ── Step 1: Check current version ─────────────────────────────────────────────
+Write-Step 1 2 "Check version"
 
-if (-not (Test-Path (Join-Path $installDir ".git"))) {
-    throw "pwagent is not installed at $installDir. Run the installer first:`n  iex `"& { `$(irm https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }`""
-}
-
-Push-Location $installDir
-$pkg = Get-Content "cli\package.json" | ConvertFrom-Json
-Write-Host "  Current version: $($pkg.version)" -ForegroundColor Gray
-Write-Host ""
-
-# ── Step 1: Pull latest ───────────────────────────────────────────────────────
-Write-Step 1 3 "Pull latest"
-
-$ErrorActionPreference = "Continue"
-git fetch origin
-$fetchExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
-if ($fetchExit -ne 0) { throw "git fetch failed." }
-
-$local  = (git rev-parse HEAD 2>$null).Trim()
-$remote = (git rev-parse "@{u}" 2>$null).Trim()
-
-if ($local -eq $remote) {
-    Write-Ok "Already up to date ($($local.Substring(0,7)))"
+$currentVer = $null
+try { $currentVer = (pwagent --version 2>$null) | Select-Object -First 1 } catch {}
+if ($currentVer) {
+    Write-Host "  Current version: $currentVer" -ForegroundColor Gray
 } else {
-    $ErrorActionPreference = "Continue"
-    git pull --ff-only
-    $pullExit = $LASTEXITCODE
-    $ErrorActionPreference = "Stop"
-    if ($pullExit -ne 0) { throw "git pull failed. Resolve conflicts manually." }
-    $newPkg = Get-Content "cli\package.json" | ConvertFrom-Json
-    Write-Ok "Updated to v$($newPkg.version)"
+    Write-Warn "pwagent not found -- running installer instead"
+    Invoke-Expression "& { $(Invoke-RestMethod https://raw.githubusercontent.com/deepakkamboj/pwagent/main/install.ps1) }"
+    return
 }
 
-# ── Step 2: Install deps ──────────────────────────────────────────────────────
-Write-Step 2 3 "Install dependencies"
+# ── Step 2: Reinstall latest ──────────────────────────────────────────────────
+Write-Step 2 2 "Update to latest"
 
-Write-Host "  Running npm install..." -ForegroundColor Gray
+Write-Host "  Running: npm install -g github:deepakkamboj/pwagent-cli#main" -ForegroundColor Gray
 $ErrorActionPreference = "Continue"
-npm install
+npm install -g github:deepakkamboj/pwagent-cli#main
 $npmExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
 if ($npmExit -ne 0) { throw "npm install failed." }
-Write-Ok "Dependencies installed"
 
-# ── Step 3: Rebuild and re-link ───────────────────────────────────────────────
-Write-Step 3 3 "Build and Link"
-
-Write-Host "  Building..." -ForegroundColor Gray
-$ErrorActionPreference = "Continue"
-npm run build --workspace cli
-$buildExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
-if ($buildExit -ne 0) { throw "Build failed." }
-Write-Ok "Build complete"
-
-Write-Host "  Re-linking 'pwagent' command..." -ForegroundColor Gray
-$ErrorActionPreference = "Continue"
-npm link --workspace cli
-$linkExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
-if ($linkExit -ne 0) { throw "npm link failed. Try running as Administrator." }
-Write-Ok "'pwagent' command linked"
-
-Pop-Location
+$newVer = $null
+try { $newVer = (pwagent --version 2>$null) | Select-Object -First 1 } catch {}
+Write-Ok "Updated to $newVer"
 
 Write-Host ""
 Write-Host "  +------------------------------------------+" -ForegroundColor Green

@@ -14,49 +14,27 @@ Write-Host ""
 
 try {
 
-$installDir = Join-Path $env:USERPROFILE ".pwagent\repos\pwagent"
-$globalDir  = Join-Path $env:USERPROFILE ".pwagent"
-
-# ── Unlink global 'pwagent' command ───────────────────────────────────────────
-if (Test-Path (Join-Path $installDir "package.json")) {
-    Write-Host "  Removing global 'pwagent' command..." -ForegroundColor Gray
-    $ErrorActionPreference = "Continue"
-    Push-Location $installDir
-    npm unlink --workspace cli 2>$null
-    Pop-Location
-    $ErrorActionPreference = "Stop"
-    Write-Ok "'pwagent' command removed"
-} else {
-    Write-Warn "pwagent repo not found at $installDir -- skipping unlink"
-}
-
-# ── Remove cloned repo ────────────────────────────────────────────────────────
-if (Test-Path $installDir) {
-    Write-Host "  Removing repo at $installDir..." -ForegroundColor Gray
-    Remove-Item -Recurse -Force $installDir
-    Write-Ok "Repo removed"
-
-    $reposDir = Split-Path $installDir
-    if ((Get-ChildItem $reposDir -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
-        Remove-Item -Force $reposDir
-    }
-} else {
-    Write-Warn "Repo not found at $installDir -- skipping"
-}
+# ── Remove global 'pwagent' command ───────────────────────────────────────────
+Write-Host "  Removing global 'pwagent' command..." -ForegroundColor Gray
+$ErrorActionPreference = "Continue"
+npm uninstall -g @pwagent/cli 2>$null
+$ErrorActionPreference = "Stop"
+Write-Ok "'pwagent' command removed"
 
 # ── Offer to remove config / data ─────────────────────────────────────────────
-Write-Host ""
-Write-Host "  Config and data are stored at: $globalDir" -ForegroundColor Gray
-Write-Host "  (squad.brand.json, scheduler state, logs, etc.)" -ForegroundColor Gray
-Write-Host ""
-$answer = Read-Host "  Remove all pwagent config and data? [y/N]"
-if ($answer -match "^[Yy]") {
-    if (Test-Path $globalDir) {
+$globalDir = Join-Path $env:USERPROFILE ".pwagent"
+if (Test-Path $globalDir) {
+    Write-Host ""
+    Write-Host "  Config and data are stored at: $globalDir" -ForegroundColor Gray
+    Write-Host "  (squad.brand.json, scheduler state, logs, etc.)" -ForegroundColor Gray
+    Write-Host ""
+    $answer = Read-Host "  Remove all pwagent config and data? [y/N]"
+    if ($answer -match "^[Yy]") {
         Remove-Item -Recurse -Force $globalDir
         Write-Ok "Config and data removed ($globalDir)"
+    } else {
+        Write-Host "  Config and data kept at $globalDir" -ForegroundColor Gray
     }
-} else {
-    Write-Host "  Config and data kept at $globalDir" -ForegroundColor Gray
 }
 
 Write-Host ""

@@ -24,8 +24,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@bradygaster/squad-cli": "github:deepakkamboj/squad#dev&path:packages/squad-cli",
-    "@bradygaster/squad-scheduler": "github:deepakkamboj/squad#dev&path:packages/squad-scheduler",
+    "@bradygaster/squad-cli": "github:deepakkamboj/squad-cli#main",
+    "@bradygaster/squad-scheduler": "github:deepakkamboj/squad-scheduler#main",
     "@github/copilot-sdk": "^0.3.0",
     "commander": "^12.1.0",
     "execa": "^9.5.1",
